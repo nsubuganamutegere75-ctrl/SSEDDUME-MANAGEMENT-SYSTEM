@@ -1,0 +1,76 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Bootstrap Capacitor & Android project if missing
+        run: |
+          if [ ! -f package.json ]; then
+            npm init -y
+            npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor-mlkit/barcode-scanning@6
+          else
+            npm install
+          fi
+
+          if [ ! -f capacitor.config.json ]; then
+            cat <<'EOF' > capacitor.config.json
+          {
+            "appId": "com.sseddume.drugshop",
+            "appName": "SSEDDUME DSMS",
+            "webDir": "www",
+            "server": {
+              "cleartext": true
+            }
+          }
+          EOF
+          fi
+
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+          # Ensure minSdkVersion >= 26 for ML Kit barcode scanning
+          if [ -f android/variables.gradle ]; then
+            sed -i 's/minSdkVersion = [0-9]\+/minSdkVersion = 26/' android/variables.gradle
+          fi
+
+          # Ensure camera, biometric, and cleartext permissions exist
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            grep -q "android.permission.CAMERA" "$MANIFEST" || sed -i '/<application/i \    <uses-permission android:name="android.permission.CAMERA" />' "$MANIFEST"
+            grep -q "android.permission.USE_BIOMETRIC" "$MANIFEST" || sed -i '/<application/i \    <uses-permission android:name="android.permission.USE_BIOMETRIC" />' "$MANIFEST"
+            sed -i 's/<application\([^>]*\)>/<application\1 android:usesCleartextTraffic="true">/' "$MANIFEST"
+          fi
+
+          npx cap sync android
+
+      - name: Build Debug APK
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sseddume-dsms-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

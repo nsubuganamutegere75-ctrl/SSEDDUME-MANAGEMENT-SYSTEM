@@ -28,6 +28,7 @@
     }
     * { box-sizing: border-box; font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 88px; -webkit-font-smoothing: antialiased; }
+    body.counter-mode { padding-bottom: 24px; }
 
     header {
       position: sticky; top: 0; z-index: 40;
@@ -35,6 +36,9 @@
       color: #fff; padding: 12px 16px;
       display: flex; justify-content: space-between; align-items: center; gap: 10px;
       box-shadow: 0 2px 12px rgba(15, 118, 110, 0.24);
+    }
+    header.counter-header {
+      background: linear-gradient(135deg, #1e293b, #0f766e);
     }
     .brand-title { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
     .brand-sub { font-size: 11px; opacity: 0.92; margin-top: 2px; }
@@ -61,7 +65,7 @@
     }
     nav button.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 700; }
 
-    main { padding: 14px; max-width: 1140px; margin: 0 auto; }
+    main { padding: 14px; max-width: 1180px; margin: 0 auto; }
     .grid-2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 12px; align-items: start; }
     @media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
 
@@ -72,6 +76,13 @@
 
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
     .card h3 { margin: 0 0 10px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+
+    .self-bio-bar {
+      background: linear-gradient(135deg, #f8fafc, #f0fdfa);
+      border: 1px solid #99f6e4; border-radius: 12px; padding: 11px 14px;
+      margin-bottom: 12px; display: flex; flex-wrap: wrap; justify-content: space-between;
+      align-items: center; gap: 10px;
+    }
 
     .alert-strip {
       border-radius: 12px; padding: 10px 14px; margin-bottom: 10px;
@@ -171,7 +182,7 @@
       border-radius: 10px; box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.36); pointer-events: none;
     }
     @media print {
-      header, nav, .lab-seal, .alert-strip, #toast, #camModal, #receiptModal .no-print { display: none !important; }
+      header, nav, .lab-seal, .alert-strip, .self-bio-bar, #toast, #camModal, #receiptModal .no-print { display: none !important; }
       body { background: #fff; padding: 0; }
       .modal-backdrop { position: static; background: none; display: block !important; padding: 0; }
       .modal-card { box-shadow: none; max-width: 100%; }
@@ -179,7 +190,7 @@
   </style>
 </head>
 <body>
-<header>
+<header id="mainHeader">
   <div>
     <div class="brand-title" id="shopTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
     <div class="brand-sub" id="shopMeta">NDA: N/A &bull; LG: N/A</div>
@@ -190,21 +201,21 @@
   </div>
 </header>
 
-<div id="loginBox" class="card" style="max-width:450px;margin:28px auto;">
-  <h3>Staff Sign In</h3>
+<div id="loginBox" class="card" style="max-width:460px;margin:28px auto;">
+  <h3>Staff &amp; Management Sign In</h3>
   <div class="row">
-    <select id="loginStaff" style="flex:1;min-width:170px;" onkeydown="if(event.key==='Enter')loginWithPin()"></select>
+    <select id="loginStaff" style="flex:1;min-width:185px;" onkeydown="if(event.key==='Enter')loginWithPin()"></select>
     <input id="loginPin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" style="width:110px;" onkeydown="if(event.key==='Enter')loginWithPin()" />
   </div>
   <div class="row">
     <button class="btn-primary" onclick="loginWithPin()" style="flex:1;">Unlock with PIN</button>
     <button class="btn-secondary" onclick="loginWithFingerprint()" id="fpLoginBtn" style="flex:1;">Fingerprint</button>
   </div>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px;">
     <small style="color:var(--muted);line-height:1.45;">
-      Seed Owner PIN: <b>1234</b> (changed on first login).
+      Opens your role's window (Command or Counter). Seed Owner PIN: <b>1234</b>.
     </small>
-    <button class="btn-ghost" type="button" onclick="recoverOwnerWithCode()" style="font-size:11px;min-height:28px;">Owner Recovery</button>
+    <button class="btn-ghost" type="button" onclick="recoverOwnerWithCode()" style="font-size:11px;min-height:28px;white-space:nowrap;">Owner Recovery</button>
   </div>
   <div id="lockoutNotice" style="color:var(--danger);font-size:13px;font-weight:700;margin-top:6px;"></div>
   <div class="lab-seal">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
@@ -237,12 +248,173 @@
 </div>
 
 <script>
-const DB_KEY = "sseddume_dsms_seed_v3";
-const LEGACY_KEYS = ["sseddume_dsms_seed_v2"];
-const SNAP_KEY = "sseddume_dsms_seed_snap_v3";
+const DB_KEY = "sseddume_dsms_seed_v4";
+const LEGACY_KEYS = ["sseddume_dsms_seed_v3", "sseddume_dsms_seed_v2"];
+const SNAP_KEY = "sseddume_dsms_seed_snap_v4";
+const DEVICE_BIO_KEY = "sseddume_device_bio_keyring_v1";
 const LOCKOUT_MAX = 5;
 const LOCKOUT_MS = 5 * 60 * 1000;
 
+/* ==================== 1. JURISDICTION & CAPABILITY MATRIX ==================== */
+const ROLE_CAPS = {
+  Owner: new Set([
+    "dispense", "void_sale", "receive_grn", "edit_meds", "view_reports",
+    "settle_credit", "close_day", "pair_windows", "manage_staff", "deactivate_staff", "shop_settings"
+  ]),
+  "In-Charge": new Set([
+    "dispense", "void_sale", "receive_grn", "edit_meds", "view_reports",
+    "settle_credit", "close_day", "pair_windows"
+  ]),
+  Dispenser: new Set([
+    "dispense"
+  ])
+};
+
+function hasCap(role, cap) {
+  return Boolean(role && ROLE_CAPS[role] && ROLE_CAPS[role].has(cap));
+}
+
+function isManagementRole(role) {
+  return role === "Owner" || role === "In-Charge";
+}
+
+function roleLabel(role) {
+  if (role === "In-Charge") return "Manager (In-Charge)";
+  if (role === "Dispenser") return "Counter Staff (Dispenser)";
+  return "Owner";
+}
+
+function requireCap(cap, actionLabel) {
+  if (!session || !hasCap(session.role, cap)) {
+    addAudit("ACCESS_DENIED", `Blocked ${session ? session.name + " (" + session.role + ")" : "Unauthenticated"} from: ${actionLabel}`);
+    saveDb();
+    alert(`Jurisdiction denied: Your role does not have permission for "${actionLabel}".`);
+    return false;
+  }
+  return true;
+}
+
+/* ==================== 2. CRYPTO & HASHED PIN / RECOVERY ENGINE ==================== */
+function randomHex(bytes = 12) {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function fallbackDigest(str) {
+  let h1 = 0x811c9dc5, h2 = 0x01000193, h3 = 0x1b873593, h4 = 0x85ebca6b;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 0x01000193);
+    h2 = Math.imul(h2 ^ ch, 0x27d4eb2d);
+    h3 = Math.imul(h3 ^ (ch + i), 0x165667b1);
+    h4 = Math.imul(h4 ^ (ch * 31), 0x9e3779b1);
+  }
+  return [h1, h2, h3, h4].map(n => (n >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+async function hashSecret(secret, salt) {
+  const material = `SSEDDUME::${salt}::${String(secret || "")}`;
+  if (window.crypto?.subtle) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
+    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, "0")).join("");
+  }
+  return fallbackDigest(material);
+}
+
+async function setStaffPin(user, rawPin) {
+  const salt = randomHex(12);
+  user.pinSalt = salt;
+  user.pinHash = await hashSecret(rawPin, salt);
+  delete user.pin;
+}
+
+async function verifyStaffPin(user, candidatePin) {
+  if (!user || !candidatePin) return false;
+  if (user.pinHash && user.pinSalt) {
+    const h = await hashSecret(candidatePin, user.pinSalt);
+    return h === user.pinHash;
+  }
+  if (user.pin) {
+    return String(user.pin) === String(candidatePin);
+  }
+  return false;
+}
+
+async function setOwnerRecoverySecret(rawCode) {
+  const clean = String(rawCode || "").trim().toUpperCase();
+  const salt = randomHex(12);
+  db.shop.recoverySalt = salt;
+  db.shop.recoveryHash = await hashSecret(clean, salt);
+  db.shop.recoveryHint = `${clean.slice(0, 6)}****${clean.slice(-2)}`;
+  delete db.shop.ownerRecoveryCode;
+}
+
+async function verifyOwnerRecoverySecret(candidateCode) {
+  const clean = String(candidateCode || "").trim().toUpperCase();
+  if (!clean) return false;
+  if (db.shop?.recoveryHash && db.shop?.recoverySalt) {
+    const h = await hashSecret(clean, db.shop.recoverySalt);
+    return h === db.shop.recoveryHash;
+  }
+  if (db.shop?.ownerRecoveryCode) {
+    return clean === String(db.shop.ownerRecoveryCode).trim().toUpperCase();
+  }
+  return false;
+}
+
+function generateRecoveryCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "REC-";
+  const arr = new Uint8Array(8);
+  crypto.getRandomValues(arr);
+  for (let i = 0; i < 8; i++) {
+    if (i === 4) out += "-";
+    out += chars[arr[i] % chars.length];
+  }
+  return out;
+}
+
+function computeChecksum(obj) {
+  const str = JSON.stringify(obj);
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 ^= ch;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 = Math.imul(h2 ^ ch, 0x27d4eb2d);
+  }
+  return ((h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0")).toUpperCase();
+}
+
+/* ==================== 3. PER-TABLET BIOMETRIC KEYRING ==================== */
+function loadDeviceKeyring() {
+  try {
+    const raw = localStorage.getItem(DEVICE_BIO_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveDeviceKeyring(ring) {
+  localStorage.setItem(DEVICE_BIO_KEY, JSON.stringify(ring));
+}
+
+function getDeviceBioForUser(userId) {
+  const ring = loadDeviceKeyring();
+  return ring[userId] || null;
+}
+
+function setDeviceBioForUser(userId, entry) {
+  const ring = loadDeviceKeyring();
+  if (entry) ring[userId] = entry;
+  else delete ring[userId];
+  saveDeviceKeyring(ring);
+}
+
+/* ==================== 4. HELPERS & STATE INITIALIZATION ==================== */
 function money(n) {
   const num = Number(n);
   if (!Number.isFinite(num)) return 0;
@@ -274,31 +446,6 @@ function esc(str) {
   return String(str ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
 
-function generateRecoveryCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "REC-";
-  const arr = new Uint8Array(8);
-  crypto.getRandomValues(arr);
-  for (let i = 0; i < 8; i++) {
-    if (i === 4) out += "-";
-    out += chars[arr[i] % chars.length];
-  }
-  return out;
-}
-
-function computeChecksum(obj) {
-  const str = JSON.stringify(obj);
-  let h1 = 0x811c9dc5;
-  let h2 = 0x01000193;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i);
-    h1 ^= ch;
-    h1 = Math.imul(h1, 0x01000193);
-    h2 = Math.imul(h2 ^ ch, 0x27d4eb2d);
-  }
-  return ((h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0")).toUpperCase();
-}
-
 let toastTimer = null;
 function toast(msg) {
   const el = document.getElementById("toast");
@@ -317,7 +464,9 @@ function defaultState() {
       currency: "UGX",
       mustChangeOwnerPin: true,
       autoLockOnHide: true,
-      ownerRecoveryCode: ""
+      recoveryHash: "",
+      recoverySalt: "",
+      recoveryHint: ""
     },
     windowsBridge: {
       paired: false,
@@ -332,7 +481,7 @@ function defaultState() {
       seq: 0
     },
     staff: [
-      { id: "U-OWNER", name: "Owner", role: "Owner", regNo: "OWNER", pin: "1234", fpEnabled: false, fpCredId: "", active: true }
+      { id: "U-OWNER", name: "Owner", role: "Owner", regNo: "OWNER", pin: "1234", active: true }
     ],
     auth: { failedAttempts: 0, lockedUntil: 0 },
     medicines: [],
@@ -375,6 +524,27 @@ let activeStream = null;
 let scanRafId = null;
 let cancelActiveScan = null;
 let batteryStatusText = "";
+
+async function migratePlainSecretsToHashes() {
+  let changed = false;
+  for (const s of db.staff) {
+    if (s.pin) {
+      await setStaffPin(s, s.pin);
+      changed = true;
+    }
+    if (s.fpEnabled && s.fpCredId && !getDeviceBioForUser(s.id)) {
+      setDeviceBioForUser(s.id, { credId: s.fpCredId, enrolledAt: nowIso() });
+      delete s.fpEnabled;
+      delete s.fpCredId;
+      changed = true;
+    }
+  }
+  if (db.shop?.ownerRecoveryCode) {
+    await setOwnerRecoverySecret(db.shop.ownerRecoveryCode);
+    changed = true;
+  }
+  if (changed) saveDb();
+}
 
 if (navigator.getBattery) {
   navigator.getBattery().then(bat => {
@@ -426,18 +596,26 @@ function addAudit(action, detail) {
 }
 
 function renderHeader() {
+  const hdr = document.getElementById("mainHeader");
+  const isCounter = session && session.role === "Dispenser";
+  hdr.className = isCounter ? "counter-header" : "";
+  document.body.className = isCounter ? "counter-mode" : "";
+
   document.getElementById("shopTitle").textContent = db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
-  const winTag = db.windowsBridge?.paired ? " • WIN PAIRED" : " • OFFLINE READY";
-  document.getElementById("shopMeta").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"}${winTag}${batteryStatusText}`;
-  document.getElementById("activeUser").textContent = session ? `${session.name} • ${session.role}` : "Locked";
+  const winMode = !session
+    ? " • SELECT WINDOW"
+    : (isCounter ? " • COUNTER WINDOW (DISPENSING)" : " • MANAGEMENT COMMAND WINDOW");
+  document.getElementById("shopMeta").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"}${winMode}${batteryStatusText}`;
+  document.getElementById("activeUser").textContent = session ? `${session.name} • ${roleLabel(session.role)}` : "Locked";
 }
 
 function populateLoginStaff() {
   const sel = document.getElementById("loginStaff");
   const activeStaff = db.staff.filter(s => s.active !== false);
-  sel.innerHTML = activeStaff.map(s =>
-    `<option value="${esc(s.id)}">${esc(s.name)} — ${esc(s.role)}${s.fpEnabled ? " [FP]" : ""}</option>`
-  ).join("");
+  sel.innerHTML = activeStaff.map(s => {
+    const bio = getDeviceBioForUser(s.id);
+    return `<option value="${esc(s.id)}">${esc(s.name)} — ${roleLabel(s.role)}${bio ? " [FP ON THIS TABLET]" : ""}</option>`;
+  }).join("");
   updateLockoutBanner();
 }
 
@@ -464,17 +642,18 @@ function recordFailedAuth() {
   updateLockoutBanner();
 }
 
-function completeLogin(user, method) {
+async function completeLogin(user, method, usedSeedDefault = false) {
   db.auth = { failedAttempts: 0, lockedUntil: 0 };
   session = { id: user.id, name: user.name, role: user.role, regNo: user.regNo };
+  currentTab = "sell";
   cart = [];
-  addAudit("LOGIN", `${user.name} (${user.role}) signed in via ${method}`);
+  addAudit("LOGIN", `${user.name} (${roleLabel(user.role)}) signed in via ${method}`);
   saveDb();
 
-  if (user.role === "Owner" && (db.shop.mustChangeOwnerPin || user.pin === "1234")) {
+  if (user.role === "Owner" && (db.shop.mustChangeOwnerPin || usedSeedDefault)) {
     let newPin = "";
     while (!newPin || newPin.length < 4 || newPin === "1234") {
-      newPin = prompt("First login security: Set your new Owner PIN (at least 4 digits, not 1234):");
+      newPin = prompt("First login security: Set your private Owner PIN (at least 4 digits, not 1234):");
       if (newPin === null) {
         session = null;
         document.getElementById("loginPin").value = "";
@@ -483,14 +662,13 @@ function completeLogin(user, method) {
       newPin = newPin.trim();
     }
     const target = db.staff.find(s => s.id === user.id);
-    if (target) target.pin = newPin;
+    if (target) await setStaffPin(target, newPin);
     db.shop.mustChangeOwnerPin = false;
-    if (!db.shop.ownerRecoveryCode) {
-      db.shop.ownerRecoveryCode = generateRecoveryCode();
-    }
-    addAudit("PIN_CHANGE", "Owner changed default PIN and generated recovery code");
+    const rawRec = generateRecoveryCode();
+    await setOwnerRecoverySecret(rawRec);
+    addAudit("PIN_CHANGE", "Owner set private hashed PIN and generated recovery secret");
     saveDb();
-    alert(`Owner PIN updated!\n\nIMPORTANT — Write down your Owner Recovery Code and keep it safe off this phone:\n\n${db.shop.ownerRecoveryCode}\n\nYou can use this code on the Sign-In screen if you ever forget your PIN.`);
+    alert(`Owner PIN secured!\n\nIMPORTANT — Write down your Owner Recovery Code and store it safely off this device:\n\n${rawRec}\n\nThis code is hashed in storage and will not be shown again.`);
   }
 
   document.getElementById("loginPin").value = "";
@@ -500,14 +678,14 @@ function completeLogin(user, method) {
   renderView();
 }
 
-function recoverOwnerWithCode() {
-  const savedCode = (db.shop?.ownerRecoveryCode || "").trim().toUpperCase();
-  if (!savedCode) {
-    return alert("No Owner Recovery Code was generated yet on this device. Sign in with Owner PIN (default 1234) or enrolled Fingerprint.");
+async function recoverOwnerWithCode() {
+  if (!db.shop?.recoveryHash && !db.shop?.ownerRecoveryCode) {
+    return alert("No Owner Recovery Code has been generated yet. Sign in with Owner PIN (default 1234) or enrolled Fingerprint.");
   }
   const entered = (prompt("Enter your Owner Recovery Code (e.g. REC-XXXX-XXXX):") || "").trim().toUpperCase();
   if (!entered) return;
-  if (entered !== savedCode) {
+  const ok = await verifyOwnerRecoverySecret(entered);
+  if (!ok) {
     recordFailedAuth();
     return alert("Invalid Owner Recovery Code.");
   }
@@ -519,25 +697,32 @@ function recoverOwnerWithCode() {
   }
   const owner = db.staff.find(s => s.role === "Owner" && s.active !== false);
   if (!owner) return alert("Owner profile not found.");
-  owner.pin = newPin;
+  await setStaffPin(owner, newPin);
   db.shop.mustChangeOwnerPin = false;
-  db.shop.ownerRecoveryCode = generateRecoveryCode();
+  const nextRec = generateRecoveryCode();
+  await setOwnerRecoverySecret(nextRec);
   db.auth = { failedAttempts: 0, lockedUntil: 0 };
   addAudit("OWNER_RECOVERY", "Owner PIN reset via Recovery Code; new recovery code issued");
   saveDb();
-  alert(`Owner PIN reset! Your NEW one-time Recovery Code is:\n\n${db.shop.ownerRecoveryCode}\n\nSave this new code safely.`);
+  populateLoginStaff();
+  alert(`Owner PIN reset! Your NEW one-time Recovery Code is:\n\n${nextRec}\n\nWrite this new code down immediately.`);
 }
 
-function loginWithPin() {
+async function loginWithPin() {
   if (updateLockoutBanner()) return;
   const staffId = document.getElementById("loginStaff").value;
   const pin = document.getElementById("loginPin").value.trim();
-  const user = db.staff.find(s => s.id === staffId && s.active !== false);
-  if (!user || !pin || user.pin !== pin) {
+  const user = db.staff.find(s => s.id === staffId);
+  if (!user || user.active === false) {
+    recordFailedAuth();
+    return alert("Account is deactivated or not found.");
+  }
+  const valid = await verifyStaffPin(user, pin);
+  if (!valid) {
     recordFailedAuth();
     return alert("Invalid PIN.");
   }
-  completeLogin(user, "PIN");
+  await completeLogin(user, "PIN", pin === "1234");
 }
 
 function stopCameraScan() {
@@ -666,65 +851,116 @@ async function verifyDeviceBiometric(reasonText, expectedCredId = "") {
     });
     return Boolean(assertion);
   }
-  throw new Error("Biometric hardware or enrolled credential unavailable.");
+  throw new Error("Biometric hardware or enrolled credential unavailable on this tablet.");
 }
 
-async function enrollFingerprintForStaff(staffId) {
-  const user = db.staff.find(s => s.id === staffId);
+async function performDeviceBiometricEnrollment(user) {
+  const capBio = window.Capacitor?.Plugins?.BiometricAuth;
+  if (capBio && typeof capBio.authenticate === "function") {
+    await capBio.authenticate({
+      reason: `Enroll fingerprint on this tablet for ${user.name} (${roleLabel(user.role)})`,
+      cancelTitle: "Cancel",
+      allowDeviceCredential: false
+    });
+    setDeviceBioForUser(user.id, { credId: "NATIVE_ANDROID_BIO", enrolledAt: nowIso() });
+    return true;
+  }
+  if (window.PublicKeyCredential) {
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: randomChallenge(),
+        rp: { name: db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM" },
+        user: { id: new TextEncoder().encode(user.id), name: user.name, displayName: `${user.name} (${user.role})` },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+        timeout: 60000
+      }
+    });
+    setDeviceBioForUser(user.id, { credId: bufToBase64(cred.rawId), enrolledAt: nowIso() });
+    return true;
+  }
+  throw new Error("Fingerprint sensor not available on this device.");
+}
+
+async function enrollMyOwnFingerprint() {
+  if (!session) return;
+  const user = db.staff.find(s => s.id === session.id && s.active !== false);
   if (!user) return;
+  const pin = prompt(`Verify your personal PIN for ${user.name} before enrolling fingerprint on this tablet:`);
+  if (!pin || !(await verifyStaffPin(user, pin.trim()))) {
+    return alert("Invalid personal PIN.");
+  }
   try {
-    const capBio = window.Capacitor?.Plugins?.BiometricAuth;
-    if (capBio && typeof capBio.authenticate === "function") {
-      await capBio.authenticate({ reason: `Enroll fingerprint for ${user.name}`, cancelTitle: "Cancel", allowDeviceCredential: false });
-      user.fpEnabled = true;
-      user.fpCredId = "NATIVE_ANDROID_BIO";
-    } else if (window.PublicKeyCredential) {
-      const cred = await navigator.credentials.create({
-        publicKey: {
-          challenge: randomChallenge(),
-          rp: { name: db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM" },
-          user: { id: new TextEncoder().encode(user.id), name: user.name, displayName: `${user.name} (${user.role})` },
-          pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
-          timeout: 60000
-        }
-      });
-      user.fpEnabled = true;
-      user.fpCredId = bufToBase64(cred.rawId);
-    } else {
-      return alert("Fingerprint sensor not available on this device.");
-    }
-    addAudit("FP_ENROLL", `Fingerprint enabled for ${user.name} (${user.role})`);
+    await performDeviceBiometricEnrollment(user);
+    addAudit("SELF_FP_ENROLL", `${user.name} (${roleLabel(user.role)}) enrolled tablet-bound fingerprint`);
     saveDb();
     populateLoginStaff();
     renderView();
-    toast(`Fingerprint enrolled for ${user.name}`);
+    toast(`Fingerprint enrolled on this tablet for ${user.name} (${roleLabel(user.role)} access only)`);
+  } catch (err) {
+    alert("Fingerprint enrollment cancelled or failed: " + (err?.message || err));
+  }
+}
+
+async function disableMyOwnFingerprint() {
+  if (!session) return;
+  const user = db.staff.find(s => s.id === session.id);
+  if (!user) return;
+  const pin = prompt("Enter your personal PIN to remove your fingerprint from this tablet:");
+  if (!pin || !(await verifyStaffPin(user, pin.trim()))) {
+    return alert("Invalid personal PIN.");
+  }
+  setDeviceBioForUser(user.id, null);
+  addAudit("SELF_FP_DISABLE", `${user.name} (${roleLabel(user.role)}) removed tablet fingerprint`);
+  saveDb();
+  populateLoginStaff();
+  renderView();
+  toast("Your fingerprint was removed from this tablet");
+}
+
+async function enrollFingerprintForStaff(staffId) {
+  if (!requireCap("manage_staff", "Enroll staff fingerprint")) return;
+  const user = db.staff.find(s => s.id === staffId);
+  if (!user) return;
+  try {
+    await performDeviceBiometricEnrollment(user);
+    addAudit("OWNER_FP_ENROLL", `Owner enrolled tablet fingerprint for ${user.name} (${roleLabel(user.role)})`);
+    saveDb();
+    populateLoginStaff();
+    renderView();
+    toast(`Fingerprint enrolled on this tablet for ${user.name}`);
   } catch (err) {
     alert("Fingerprint enrollment cancelled or failed: " + (err?.message || err));
   }
 }
 
 function disableFingerprintForStaff(staffId) {
+  if (!requireCap("manage_staff", "Remove staff fingerprint")) return;
   const user = db.staff.find(s => s.id === staffId);
   if (!user) return;
-  user.fpEnabled = false;
-  user.fpCredId = "";
-  addAudit("FP_DISABLE", `Fingerprint disabled for ${user.name} (${user.role})`);
+  setDeviceBioForUser(user.id, null);
+  addAudit("OWNER_FP_DISABLE", `Owner removed tablet fingerprint for ${user.name} (${roleLabel(user.role)})`);
   saveDb();
   populateLoginStaff();
   renderView();
-  toast(`Fingerprint disabled for ${user.name}`);
+  toast(`Fingerprint removed from this tablet for ${user.name}`);
 }
 
 async function loginWithFingerprint() {
   if (updateLockoutBanner()) return;
   const staffId = document.getElementById("loginStaff").value;
-  const user = db.staff.find(s => s.id === staffId && s.active !== false);
-  if (!user) return;
-  if (!user.fpEnabled) return alert("Fingerprint is not enrolled for this staff member.");
+  const user = db.staff.find(s => s.id === staffId);
+  if (!user || user.active === false) {
+    recordFailedAuth();
+    return alert("Account is deactivated or not found.");
+  }
+  const bio = getDeviceBioForUser(user.id);
+  if (!bio) {
+    return alert("Fingerprint is not enrolled on THIS tablet yet. Sign in with PIN and tap 'Enroll My Fingerprint' in your window.");
+  }
   try {
-    const ok = await verifyDeviceBiometric(`Sign in as ${user.name} (${user.role})`, user.fpCredId);
-    if (ok) completeLogin(user, "FINGERPRINT");
+    const ok = await verifyDeviceBiometric(`Sign in as ${user.name} (${roleLabel(user.role)})`, bio.credId);
+    if (ok) await completeLogin(user, "FINGERPRINT", false);
   } catch (err) {
     recordFailedAuth();
     alert("Fingerprint verification failed: " + (err?.message || err));
@@ -732,24 +968,27 @@ async function loginWithFingerprint() {
 }
 
 async function authorizeSupervisor(actionLabel) {
-  const supervisors = db.staff.filter(s => s.active !== false && (s.role === "Owner" || s.role === "In-Charge"));
-  const fpSupervisor = supervisors.find(s => s.fpEnabled);
+  const supervisors = db.staff.filter(s => s.active !== false && isManagementRole(s.role));
+  const fpSupervisor = supervisors.find(s => Boolean(getDeviceBioForUser(s.id)));
   if (fpSupervisor) {
-    const useFp = confirm(`${actionLabel}\n\nPress OK for Supervisor Fingerprint (${fpSupervisor.name}), or Cancel for Supervisor PIN.`);
+    const bio = getDeviceBioForUser(fpSupervisor.id);
+    const useFp = confirm(`${actionLabel}\n\nPress OK for Owner/Manager Fingerprint (${fpSupervisor.name}), or Cancel for Owner/Manager PIN.`);
     if (useFp) {
       try {
-        const ok = await verifyDeviceBiometric(actionLabel, fpSupervisor.fpCredId);
+        const ok = await verifyDeviceBiometric(actionLabel, bio.credId);
         if (ok) return fpSupervisor;
       } catch (_) {
         alert("Fingerprint failed, falling back to PIN.");
       }
     }
   }
-  const pin = prompt(`${actionLabel}\nEnter In-Charge or Owner PIN:`);
+  const pin = prompt(`${actionLabel}\nEnter Owner or Manager (In-Charge) PIN:`);
   if (!pin) return null;
-  const matched = supervisors.find(s => s.pin === pin.trim());
-  if (!matched) { alert("Invalid In-Charge/Owner PIN."); return null; }
-  return matched;
+  for (const s of supervisors) {
+    if (await verifyStaffPin(s, pin.trim())) return s;
+  }
+  alert("Invalid Owner/Manager PIN.");
+  return null;
 }
 
 function logout() {
@@ -770,24 +1009,68 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function renderTabs() {
-  const allTabs = [
-    { id: "sell", icon: "💊", label: "Sell", roles: ["Dispenser", "In-Charge", "Owner"] },
-    { id: "grn", icon: "📦", label: "Stock", roles: ["In-Charge", "Owner"] },
-    { id: "meds", icon: "📋", label: "Meds", roles: ["In-Charge", "Owner"] },
-    { id: "reports", icon: "📊", label: "Reports", roles: ["In-Charge", "Owner"] },
-    { id: "admin", icon: "🛡️", label: "Admin", roles: ["Owner"] }
-  ];
-  const allowed = allTabs.filter(t => t.roles.includes(session.role));
-  if (!allowed.some(t => t.id === currentTab)) currentTab = allowed[0].id;
   const nav = document.getElementById("tabs");
+  if (session.role === "Dispenser") {
+    currentTab = "sell";
+    nav.style.display = "none";
+    nav.innerHTML = "";
+    return;
+  }
+
+  nav.style.display = "flex";
+  const allTabs = [
+    { id: "sell", icon: "💊", label: "Sell", cap: "dispense" },
+    { id: "grn", icon: "📦", label: "Stock", cap: "receive_grn" },
+    { id: "meds", icon: "📋", label: "Meds", cap: "edit_meds" },
+    { id: "reports", icon: "📊", label: "Reports", cap: "view_reports" },
+    { id: "admin", icon: "🛡️", label: "Admin", cap: "manage_staff" }
+  ];
+  const allowed = allTabs.filter(t => hasCap(session.role, t.cap));
+  if (!allowed.some(t => t.id === currentTab)) currentTab = allowed[0].id;
   nav.innerHTML = "";
   allowed.forEach(t => {
     const b = document.createElement("button");
     b.innerHTML = `<span style="font-size:15px;">${t.icon}</span><span>${esc(t.label)}</span>`;
     b.className = currentTab === t.id ? "active" : "";
-    b.onclick = () => { currentTab = t.id; renderTabs(); renderView(); };
+    b.onclick = () => {
+      if (!requireCap(t.cap, `Open ${t.label}`)) return;
+      currentTab = t.id;
+      renderTabs();
+      renderView();
+    };
     nav.appendChild(b);
   });
+}
+
+function renderSelfJurisdictionBar() {
+  if (!session) return "";
+  const bio = getDeviceBioForUser(session.id);
+  const isCounter = session.role === "Dispenser";
+  const windowName = isCounter ? "STAFF COUNTER WINDOW (Dispensing Only)" : `${roleLabel(session.role).toUpperCase()} COMMAND WINDOW`;
+  const scopeDesc = isCounter
+    ? "Jurisdiction: Walk-in dispensing & receipts only. Management, stock edits, cash reports, and admin controls stay with Owner & Manager."
+    : (session.role === "In-Charge"
+        ? "Jurisdiction: Dispensing, Stock/GRN, Meds & Reports. Admin & staff deactivation stay with Owner."
+        : "Jurisdiction: Full Owner control across all shop windows, staff activation, and settings.");
+
+  return `
+    <div class="self-bio-bar">
+      <div style="max-width:650px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="badge ${isCounter ? "warn" : "info"}">${windowName}</span>
+          <strong>${esc(session.name)}</strong>
+          ${bio ? '<span class="badge ok">FINGERPRINT ENROLLED ON THIS TABLET</span>' : '<span class="badge warn">PIN ONLY ON THIS TABLET</span>'}
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4;">${scopeDesc}</div>
+      </div>
+      <div class="row" style="margin:0;">
+        <button class="btn-primary" style="min-height:36px;padding:6px 12px;font-size:12.5px;" onclick="enrollMyOwnFingerprint()">
+          ${bio ? "Update My Fingerprint" : "Enroll My Fingerprint"}
+        </button>
+        ${bio ? `<button class="btn-ghost" onclick="disableMyOwnFingerprint()">Remove My FP</button>` : ""}
+      </div>
+    </div>
+  `;
 }
 
 function batchStatus(b) {
@@ -886,15 +1169,18 @@ function renderMitigationAlerts() {
   if (lowMeds.length) {
     notes.push(`<div class="alert-strip alert-warn"><strong>Low Stock Reorder Alert:</strong> ${lowMeds.length} medicine(s) at or below reorder level (${lowMeds.slice(0, 4).map(m => esc(m.generic_name)).join(", ")}${lowMeds.length > 4 ? "..." : ""}).</div>`);
   }
-  const lastExp = db.meta?.lastExportAt ? new Date(db.meta.lastExportAt).getTime() : 0;
-  const hasActivity = db.sales.length > 0 || db.batches.length > 0;
-  if (hasActivity && (!lastExp || Date.now() - lastExp > 24 * 3600 * 1000)) {
-    notes.push(`<div class="alert-strip alert-warn"><strong>Backup Reminder:</strong> Export a verified JSON or Windows Pack backup off the device so data survives storage resets.</div>`);
+  if (hasCap(session?.role, "view_reports")) {
+    const lastExp = db.meta?.lastExportAt ? new Date(db.meta.lastExportAt).getTime() : 0;
+    const hasActivity = db.sales.length > 0 || db.batches.length > 0;
+    if (hasActivity && (!lastExp || Date.now() - lastExp > 24 * 3600 * 1000)) {
+      notes.push(`<div class="alert-strip alert-warn"><strong>Backup Reminder:</strong> Export a verified JSON or Windows Pack backup off the device so data survives storage resets.</div>`);
+    }
   }
   return notes.join("");
 }
 
 function renderKpis() {
+  if (!hasCap(session?.role, "view_reports")) return "";
   const validSales = db.sales.filter(s => !s.voided);
   const cashTotal = money(validSales.reduce((a, b) => a + money(b.cashPaid ?? (b.payMethod === "CASH" ? b.total : 0)), 0));
   const mmTotal = money(validSales.reduce((a, b) => a + money(b.mmPaid ?? (b.payMethod === "MOBILE_MONEY" ? b.total : 0)), 0));
@@ -912,6 +1198,7 @@ function renderKpis() {
 }
 
 function renderWindowsIncentiveCard() {
+  if (!hasCap(session?.role, "pair_windows")) return "";
   const wb = db.windowsBridge || {};
   const hasHttpUrl = /^https?:\/\//i.test(wb.endpointUrl || "");
   return `
@@ -936,12 +1223,14 @@ function renderWindowsIncentiveCard() {
 }
 
 function openPairedWindowsApp() {
+  if (!requireCap("pair_windows", "Open paired Windows station")) return;
   const url = db.windowsBridge?.endpointUrl || "";
   if (!/^https?:\/\//i.test(url)) return alert("No valid Windows HTTP/HTTPS host URL paired yet.");
   window.open(url, "_blank", "noopener");
 }
 
 function applyWindowsPairingPayload(raw) {
+  if (!requireCap("pair_windows", "Pair Windows station")) return false;
   const text = String(raw || "").trim();
   if (!text) return false;
   let hostName = "Windows Desktop";
@@ -965,7 +1254,7 @@ function applyWindowsPairingPayload(raw) {
     tokenOrCode,
     pairedAt: nowIso()
   };
-  addAudit("WIN_PAIR", `Paired Android seed with Windows host "${hostName}" (${endpointUrl || "code-only"})`);
+  addAudit("WIN_PAIR", `Paired tablet with Windows host "${hostName}" (${endpointUrl || "code-only"})`);
   saveDb();
   renderView();
   toast(`Windows linked: ${hostName}`);
@@ -973,6 +1262,7 @@ function applyWindowsPairingPayload(raw) {
 }
 
 function unpairWindowsBridge() {
+  if (!requireCap("manage_staff", "Unpair Windows station")) return;
   db.windowsBridge = defaultState().windowsBridge;
   addAudit("WIN_UNPAIR", "Unpaired Windows desktop host");
   saveDb();
@@ -981,6 +1271,7 @@ function unpairWindowsBridge() {
 }
 
 async function scanWindowsPairingQr() {
+  if (!requireCap("pair_windows", "Scan Windows pairing QR")) return;
   try {
     const code = await scanBarcodeWithCamera("Scan Windows Desktop Pairing QR");
     if (!code) return;
@@ -993,6 +1284,7 @@ async function scanWindowsPairingQr() {
 }
 
 function exportWindowsBridgeBundle() {
+  if (!requireCap("view_reports", "Export Windows sync bundle")) return;
   const snapshotCopy = JSON.parse(JSON.stringify(db));
   const payload = {
     system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
@@ -1020,6 +1312,18 @@ function exportWindowsBridgeBundle() {
 
 function renderView() {
   const v = document.getElementById("view");
+  const tabCaps = {
+    sell: "dispense",
+    grn: "receive_grn",
+    meds: "edit_meds",
+    reports: "view_reports",
+    admin: "manage_staff"
+  };
+  const neededCap = tabCaps[currentTab] || "dispense";
+  if (!hasCap(session?.role, neededCap)) {
+    currentTab = "sell";
+    renderTabs();
+  }
   if (currentTab === "sell") return renderSell(v);
   if (currentTab === "grn") return renderGrn(v);
   if (currentTab === "meds") return renderMeds(v);
@@ -1028,6 +1332,7 @@ function renderView() {
 }
 
 function renderSell(v) {
+  const isCounter = session.role === "Dispenser";
   const usableMeds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED");
   const medOptions = usableMeds.map(m => {
     const avail = medAvailableStock(m.id);
@@ -1057,7 +1362,11 @@ function renderSell(v) {
 
   const cartTotal = money(cart.reduce((sum, i) => sum + money(i.qty * i.unitPrice), 0));
 
-  const saleRows = db.sales.slice(0, 25).map(s => `
+  const visibleSales = isCounter
+    ? db.sales.filter(s => s.dispenser === session.name).slice(0, 20)
+    : db.sales.slice(0, 25);
+
+  const saleRows = visibleSales.map(s => `
     <tr>
       <td>${esc(s.time.slice(0, 16).replace("T", " "))}</td>
       <td>
@@ -1071,9 +1380,10 @@ function renderSell(v) {
       <td>${esc(s.dispenser)} <small style="color:var(--muted);">[${esc(s.dispenserReg || "N/A")}]</small></td>
       <td>${s.voided ? '<span class="badge bad">VOIDED</span>' : `<button class="btn-danger" style="min-height:32px;padding:4px 10px;font-size:12px;" onclick="voidSale('${esc(s.id)}')">Void</button>`}</td>
     </tr>
-  `).join("");
+  `).join("") || `<tr><td colspan="7" style="color:var(--muted);">No receipts recorded yet in this window.</td></tr>`;
 
   v.innerHTML = `
+    ${renderSelfJurisdictionBar()}
     ${renderKpis()}
     ${renderMitigationAlerts()}
     ${renderWindowsIncentiveCard()}
@@ -1128,7 +1438,7 @@ function renderSell(v) {
     </div>
 
     <div class="card">
-      <h3>Dispensing &amp; Sales Register (Immutable)</h3>
+      <h3>${isCounter ? "My Counter Receipts (Void Requires Owner/Manager Approval)" : "Dispensing & Sales Register (Immutable)"}</h3>
       <div class="table-wrap">
         <table><thead><tr><th>Time</th><th>Receipt &amp; Medicine</th><th>Batch</th><th>Qty</th><th>Total</th><th>Dispenser</th><th>Control</th></tr></thead><tbody>${saleRows}</tbody></table>
       </div>
@@ -1180,6 +1490,7 @@ function removeCartItem(idx) {
 }
 
 async function checkoutBasket() {
+  if (!requireCap("dispense", "Complete sale")) return;
   if (!cart.length) {
     const medId = document.getElementById("sellMed")?.value;
     const qty = parseInt(document.getElementById("sellQty")?.value || "0", 10);
@@ -1402,8 +1713,22 @@ async function voidSale(saleId) {
   sale.voided = true;
   sale.voidReason = reason.trim();
   sale.voidedBy = supervisor.name;
+  sale.cashPaid = 0;
+  sale.mmPaid = 0;
+
   const batch = db.batches.find(b => b.id === sale.batchId);
   if (batch) batch.qty += sale.qty;
+
+  // Reconcile any open credit linked to this receipt
+  if (sale.receiptId) {
+    const linkedCredit = (db.credits || []).find(c => c.receiptId === sale.receiptId && !c.settled);
+    if (linkedCredit) {
+      linkedCredit.total = Math.max(0, money(linkedCredit.total - sale.total));
+      linkedCredit.balance = Math.max(0, money(linkedCredit.balance - sale.total));
+      if (linkedCredit.balance <= 0) linkedCredit.settled = true;
+    }
+  }
+
   addAudit("VOID_SALE", `Voided ${sale.id} (+${sale.qty} returned to batch ${sale.batchNo}) by ${supervisor.name} — Reason: ${reason.trim()}`);
   saveDb();
   renderView();
@@ -1411,6 +1736,7 @@ async function voidSale(saleId) {
 }
 
 function renderGrn(v) {
+  if (!requireCap("receive_grn", "Stock/GRN")) return;
   const medOpts = db.medicines.map(m =>
     `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} (${esc(m.base_unit)}${m.pack_name ? ` | ${esc(m.pack_name)}=${m.pack_multiplier}` : ""})${m.barcode ? ` [${esc(m.barcode)}]` : ""} — ${esc(m.nda_schedule)}</option>`
   ).join("");
@@ -1438,6 +1764,7 @@ function renderGrn(v) {
   }).join("");
 
   v.innerHTML = `
+    ${renderSelfJurisdictionBar()}
     ${renderKpis()}
     ${renderMitigationAlerts()}
     <div class="card">
@@ -1474,6 +1801,7 @@ function renderGrn(v) {
 }
 
 async function scanForStocking() {
+  if (!requireCap("receive_grn", "Scan stock barcode")) return;
   try {
     const code = await scanBarcodeWithCamera("Scan Medicine During Stocking");
     if (!code) return;
@@ -1530,6 +1858,7 @@ async function scanForStocking() {
 }
 
 function receiveGrn() {
+  if (!requireCap("receive_grn", "Receive GRN stock")) return;
   const medId = document.getElementById("grnMed").value;
   const scannedCode = document.getElementById("grnScannedCode").value.trim();
   const wholesaler = document.getElementById("grnWholesaler").value.trim();
@@ -1573,6 +1902,7 @@ function receiveGrn() {
 }
 
 async function toggleQuarantine(batchId) {
+  if (!requireCap("receive_grn", "Toggle batch quarantine")) return;
   const b = db.batches.find(x => x.id === batchId);
   if (!b) return;
   const supervisor = await authorizeSupervisor(`${b.quarantined ? "Release" : "Quarantine"} batch ${b.batchNo}`);
@@ -1588,6 +1918,7 @@ async function toggleQuarantine(batchId) {
 }
 
 async function adjustBatchStock(batchId) {
+  if (!requireCap("receive_grn", "Adjust batch stock")) return;
   const b = db.batches.find(x => x.id === batchId);
   if (!b) return;
   const supervisor = await authorizeSupervisor(`Adjust stock on batch ${b.batchNo} (current: ${b.qty})`);
@@ -1626,6 +1957,7 @@ function parseCsvLine(line) {
 }
 
 function renderMeds(v) {
+  if (!requireCap("edit_meds", "Meds catalogue")) return;
   const rows = db.medicines.map(m => {
     const avail = medAvailableStock(m.id);
     const isLow = m.nda_schedule !== "RESTRICTED" && avail <= (m.reorder_level || 0);
@@ -1643,6 +1975,7 @@ function renderMeds(v) {
   }).join("");
 
   v.innerHTML = `
+    ${renderSelfJurisdictionBar()}
     <div class="card">
       <h3>Quick Add Medicine (Single-Tablet &amp; Pack Ready)</h3>
       <div class="row">
@@ -1694,6 +2027,7 @@ function renderMeds(v) {
 }
 
 function quickAddMedicine() {
+  if (!requireCap("edit_meds", "Add medicine")) return;
   const generic_name = document.getElementById("qmGen").value.trim();
   if (!generic_name) return alert("Generic Name is required.");
   const brand_name = document.getElementById("qmBrand").value.trim();
@@ -1728,6 +2062,7 @@ function quickAddMedicine() {
 }
 
 function editMedQuick(medId) {
+  if (!requireCap("edit_meds", "Edit medicine price/note")) return;
   const m = db.medicines.find(x => x.id === medId);
   if (!m) return;
   const pStr = prompt(`Default unit selling price for 1 ${m.base_unit} of ${m.generic_name}:`, String(m.default_unit_price || 0));
@@ -1743,6 +2078,7 @@ function editMedQuick(medId) {
 }
 
 function importCsv() {
+  if (!requireCap("edit_meds", "Import medicines CSV")) return;
   const raw = document.getElementById("csvInput").value.trim();
   if (!raw) return alert("Paste CSV rows first.");
   const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -1787,6 +2123,7 @@ function importCsv() {
 }
 
 function renderReports(v) {
+  if (!requireCap("view_reports", "Reports")) return;
   const validSales = db.sales.filter(s => !s.voided);
   const cashTotal = money(validSales.reduce((a, b) => a + money(b.cashPaid ?? (b.payMethod === "CASH" ? b.total : 0)), 0));
   const mmTotal = money(validSales.reduce((a, b) => a + money(b.mmPaid ?? (b.payMethod === "MOBILE_MONEY" ? b.total : 0)), 0));
@@ -1824,11 +2161,12 @@ function renderReports(v) {
   ).join("");
 
   v.innerHTML = `
+    ${renderSelfJurisdictionBar()}
     ${renderKpis()}
     ${renderMitigationAlerts()}
 
     <div class="card">
-      <h3>Owner Executive Snapshot &amp; Cash-Up</h3>
+      <h3>Owner &amp; Manager Executive Snapshot &amp; Cash-Up</h3>
       <p style="margin:0 0 10px;">
         <strong>Expected Cash in Drawer:</strong> ${cashTotal.toFixed(2)} &bull;
         <strong>Mobile Money Collected:</strong> ${mmTotal.toFixed(2)} &bull;
@@ -1886,6 +2224,7 @@ function renderReports(v) {
 }
 
 function settleCreditPayment(creditId) {
+  if (!requireCap("settle_credit", "Record credit repayment")) return;
   const c = (db.credits || []).find(x => x.id === creditId && !x.settled);
   if (!c) return;
   const amtStr = prompt(`Customer: ${c.customer}\nRemaining Balance: ${money(c.balance).toFixed(2)}\nEnter amount paid now:`);
@@ -1905,6 +2244,7 @@ function settleCreditPayment(creditId) {
 }
 
 function recordShiftHandover(expectedCash, mmTotal) {
+  if (!requireCap("close_day", "Record shift handover")) return;
   const nextStaff = (prompt("Incoming Dispenser / Shift Note (optional):") || "").trim();
   const countedRaw = document.getElementById("countedCash")?.value;
   const counted = countedRaw !== "" && countedRaw !== undefined ? money(parseFloat(countedRaw)) : money(expectedCash);
@@ -1926,6 +2266,7 @@ function recordShiftHandover(expectedCash, mmTotal) {
 }
 
 function logTemp() {
+  if (!requireCap("view_reports", "Log storage temperature")) return;
   const room = document.getElementById("tempC").value.trim();
   const fridge = document.getElementById("fridgeC").value.trim();
   if (!room) return alert("Enter room temperature.");
@@ -1936,6 +2277,7 @@ function logTemp() {
 }
 
 function closeDay(expectedCash, mmTotal) {
+  if (!requireCap("close_day", "Close day cash-up")) return;
   const counted = parseFloat(document.getElementById("countedCash").value);
   if (Number.isNaN(counted)) return alert("Enter counted cash.");
   const diff = money(counted - expectedCash);
@@ -1947,6 +2289,7 @@ function closeDay(expectedCash, mmTotal) {
 }
 
 function exportDispensingCsv() {
+  if (!requireCap("view_reports", "Export NDA CSV")) return;
   const header = "time,receipt_id,medicine,batch_no,qty,unit_price,total,payment,cash_paid,mm_paid,pay_ref,dosage,dispenser,council_reg_no,voided\n";
   const body = db.sales.map(s =>
     [s.time, s.receiptId || "", `"${String(s.medName).replace(/"/g, '""')}"`, s.batchNo, s.qty, s.unitPrice, s.total, s.payMethod, s.cashPaid ?? "", s.mmPaid ?? "", `"${String(s.payRef || "").replace(/"/g, '""')}"`, `"${String(s.dosage || "").replace(/"/g, '""')}"`, `"${String(s.dispenser).replace(/"/g, '""')}"`, `"${String(s.dispenserReg).replace(/"/g, '""')}"`, s.voided].join(",")
@@ -1960,6 +2303,7 @@ function exportDispensingCsv() {
 }
 
 function exportBackupJson() {
+  if (!requireCap("view_reports", "Export backup JSON")) return;
   const snapshotCopy = JSON.parse(JSON.stringify(db));
   const envelope = {
     system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
@@ -1976,6 +2320,7 @@ function exportBackupJson() {
 }
 
 async function restoreBackupJson(ev) {
+  if (!requireCap("view_reports", "Restore backup JSON")) return;
   const file = ev.target.files?.[0];
   ev.target.value = "";
   if (!file) return;
@@ -2003,6 +2348,7 @@ async function restoreBackupJson(ev) {
       credits: Array.isArray(payload.credits) ? payload.credits : [],
       shiftHandovers: Array.isArray(payload.shiftHandovers) ? payload.shiftHandovers : []
     };
+    await migratePlainSecretsToHashes();
     addAudit("RESTORE_BACKUP", `Restored verified backup from ${file.name} by ${supervisor.name}`);
     saveDb();
     populateLoginStaff();
@@ -2022,30 +2368,95 @@ function downloadBlob(content, filename, mime) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function rotateOwnerRecoveryCode() {
-  db.shop.ownerRecoveryCode = generateRecoveryCode();
-  addAudit("RECOVERY_ROTATE", "Owner rotated recovery code");
+async function rotateOwnerRecoveryCode() {
+  if (!requireCap("shop_settings", "Rotate Owner Recovery Code")) return;
+  const rawRec = generateRecoveryCode();
+  await setOwnerRecoverySecret(rawRec);
+  addAudit("RECOVERY_ROTATE", "Owner rotated hashed recovery secret");
   saveDb();
   renderView();
-  alert(`New Owner Recovery Code:\n\n${db.shop.ownerRecoveryCode}\n\nWrite this down and store it safely off this device.`);
+  alert(`New Owner Recovery Code:\n\n${rawRec}\n\nWrite this down and store it safely off this device. It is hashed in storage and cannot be viewed again.`);
+}
+
+function onRoleSelectChange() {
+  const role = document.getElementById("stRole")?.value || "Dispenser";
+  const hint = document.getElementById("roleScopeHint");
+  const regInput = document.getElementById("stReg");
+  if (!hint || !regInput) return;
+  if (role === "Owner") {
+    hint.textContent = "Owner Window: Full control across all shop screens, staff activation, and settings.";
+    regInput.placeholder = "Council Reg No. (optional for Owner)";
+  } else if (role === "In-Charge") {
+    hint.textContent = "Manager (In-Charge) Command Window: Dispensing, Stock/GRN, Meds, Reports & supervisor approvals. Cannot open Admin or deactivate staff.";
+    regInput.placeholder = "Council Registration No. (required)";
+  } else {
+    hint.textContent = "Counter Staff (Dispenser) Window: Opens strictly in the Counter Dispensing Window (Sell & own tablet fingerprint only). No access to Stock, Meds, Reports, or Admin.";
+    regInput.placeholder = "Council Registration No. (required)";
+  }
+}
+
+function toggleStaffActive(staffId) {
+  if (!requireCap("deactivate_staff", "Change staff active status")) return;
+  const user = db.staff.find(s => s.id === staffId);
+  if (!user) return;
+  const currentlyActive = user.active !== false;
+  if (currentlyActive) {
+    if (user.id === session.id) {
+      return alert("You cannot deactivate your own active Owner account while signed in.");
+    }
+    if (user.role === "Owner") {
+      const otherActiveOwners = db.staff.filter(s => s.role === "Owner" && s.active !== false && s.id !== user.id);
+      if (!otherActiveOwners.length) {
+        return alert("At least one active Owner account must remain active.");
+      }
+    }
+    const reason = prompt(`Reason for deactivating ${user.name} (${roleLabel(user.role)}) — required:`);
+    if (!reason || !reason.trim()) return alert("Deactivation reason is required.");
+    user.active = false;
+    addAudit("STAFF_DEACTIVATE", `Deactivated ${user.name} (${roleLabel(user.role)}) — Reason: ${reason.trim()}`);
+    saveDb();
+    populateLoginStaff();
+    renderView();
+    toast(`${user.name} deactivated`);
+  } else {
+    user.active = true;
+    addAudit("STAFF_ACTIVATE", `Reactivated ${user.name} (${roleLabel(user.role)})`);
+    saveDb();
+    populateLoginStaff();
+    renderView();
+    toast(`${user.name} reactivated`);
+  }
 }
 
 function renderAdmin(v) {
+  if (!requireCap("manage_staff", "Open Admin screen")) return;
   const wb = db.windowsBridge || {};
-  const staffRows = db.staff.map(s => `
-    <tr>
-      <td>${esc(s.name)}</td>
-      <td>${esc(s.role)}</td>
-      <td>${esc(s.regNo || "N/A")}</td>
-      <td>${s.fpEnabled ? '<span class="badge ok">ENROLLED</span>' : '<span class="badge warn">NOT SET</span>'}</td>
-      <td style="white-space:nowrap;">
-        <button class="btn-ghost" onclick="enrollFingerprintForStaff('${esc(s.id)}')">Enroll FP</button>
-        ${s.fpEnabled ? `<button class="btn-ghost" onclick="disableFingerprintForStaff('${esc(s.id)}')">Disable FP</button>` : ""}
-      </td>
-    </tr>
-  `).join("");
+  const ownerProfile = db.staff.find(s => s.id === session.id) || db.staff.find(s => s.role === "Owner");
+
+  const staffRows = db.staff.map(s => {
+    const isActive = s.active !== false;
+    const isSelf = ownerProfile && s.id === ownerProfile.id;
+    const windowTag = s.role === "Dispenser" ? "Counter Window" : "Command Window";
+    const bio = getDeviceBioForUser(s.id);
+    return `
+      <tr>
+        <td><strong>${esc(s.name)}</strong> ${isSelf ? '<span class="badge info">YOU</span>' : ""}</td>
+        <td><span class="badge ${s.role === "Owner" ? "info" : (s.role === "In-Charge" ? "ok" : "warn")}">${roleLabel(s.role)}</span><br><small style="color:var(--muted);">${windowTag}</small></td>
+        <td>${esc(s.regNo || "N/A")}</td>
+        <td>${isActive ? '<span class="badge ok">ACTIVE</span>' : '<span class="badge bad">DEACTIVATED</span>'}</td>
+        <td>${bio ? '<span class="badge ok">THIS TABLET</span>' : '<span class="badge warn">SELF / OTHER TABLET</span>'}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn-ghost" onclick="enrollFingerprintForStaff('${esc(s.id)}')">${bio ? "Reset FP" : "Enroll FP"}</button>
+          ${bio ? `<button class="btn-ghost" onclick="disableFingerprintForStaff('${esc(s.id)}')">Disable FP</button>` : ""}
+          ${!isSelf ? `<button class="${isActive ? "btn-danger" : "btn-primary"}" style="min-height:32px;padding:4px 10px;font-size:12px;" onclick="toggleStaffActive('${esc(s.id)}')">${isActive ? "Deactivate" : "Activate"}</button>` : ""}
+        </td>
+      </tr>
+    `;
+  }).join("");
 
   v.innerHTML = `
+    ${renderSelfJurisdictionBar()}
+
     <div class="card">
       <h3>Shop, NDA Licence &amp; Owner Recovery</h3>
       <div class="row">
@@ -2058,7 +2469,7 @@ function renderAdmin(v) {
         <button class="btn-primary" onclick="saveShopDetails()">Save Shop Details</button>
       </div>
       <div class="row" style="margin-top:6px;margin-bottom:0;">
-        <span style="font-size:12.5px;color:var(--muted);">Owner Recovery Code: <code>${esc(db.shop.ownerRecoveryCode || "Not generated")}</code></span>
+        <span style="font-size:12.5px;color:var(--muted);">Owner Recovery Secret: <code>${esc(db.shop.recoveryHint || "Not generated")}</code> (SHA-256 Protected)</span>
         <button class="btn-ghost" onclick="rotateOwnerRecoveryCode()">Generate New Recovery Code</button>
       </div>
     </div>
@@ -2066,7 +2477,7 @@ function renderAdmin(v) {
     <div class="card">
       <h3>Windows App Pairing</h3>
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px;">
-        Scan a Windows QR code or paste a pairing string (<code>SSEDDUME-WIN|Shop-PC|http://192.168.1.50:8080|PAIR-01</code>) to link this Android app with a Windows desktop station.
+        Scan a Windows QR code or paste a pairing string (<code>SSEDDUME-WIN|Shop-PC|http://192.168.1.50:8080|PAIR-01</code>) to link this tablet with a Windows desktop station.
       </p>
       <div class="row">
         <input id="winCodeInput" type="text" value="${esc(wb.endpointUrl || wb.tokenOrCode || "")}" placeholder="SSEDDUME-WIN|Host|http://PC-IP:8080|CODE" style="flex:1;min-width:240px;" />
@@ -2081,32 +2492,36 @@ function renderAdmin(v) {
     </div>
 
     <div class="card">
-      <h3>Add Staff (Council Registration &amp; PIN)</h3>
+      <h3>Add Staff &amp; Assign Window Jurisdiction</h3>
       <div class="row">
         <input id="stName" type="text" placeholder="Full Name" />
-        <select id="stRole">
-          <option value="Dispenser">Dispenser</option>
-          <option value="In-Charge">In-Charge</option>
-          <option value="Owner">Owner</option>
+        <select id="stRole" onchange="onRoleSelectChange()">
+          <option value="Dispenser">Counter Staff (Dispenser) — Counter Window</option>
+          <option value="In-Charge">Manager (In-Charge) — Command Window</option>
+          <option value="Owner">Owner — Full Owner Control</option>
         </select>
-        <input id="stReg" type="text" placeholder="Council Registration No." />
+        <input id="stReg" type="text" placeholder="Council Registration No. (required)" />
         <input id="stPin" type="password" inputmode="numeric" placeholder="Staff PIN (min 4)" maxlength="8" />
         <button class="btn-primary" onclick="addStaff()">Add Staff</button>
       </div>
+      <div id="roleScopeHint" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
       <div class="table-wrap">
-        <table><thead><tr><th>Name</th><th>Role</th><th>Council Reg No.</th><th>Fingerprint</th><th>Action</th></tr></thead><tbody>${staffRows}</tbody></table>
+        <table><thead><tr><th>Name</th><th>Role &amp; Window</th><th>Council Reg No.</th><th>Account</th><th>Device FP</th><th>Owner Controls</th></tr></thead><tbody>${staffRows}</tbody></table>
       </div>
     </div>
   `;
+  onRoleSelectChange();
 }
 
 function saveManualWindowsBridge() {
+  if (!requireCap("pair_windows", "Link Windows host")) return;
   const val = document.getElementById("winCodeInput").value.trim();
   if (!val) return alert("Enter or scan a Windows pairing code or URL.");
   applyWindowsPairingPayload(val);
 }
 
 function saveShopDetails() {
+  if (!requireCap("shop_settings", "Save shop details")) return;
   db.shop.name = document.getElementById("admName").value.trim() || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
   db.shop.nda = document.getElementById("admNda").value.trim();
   db.shop.lg = document.getElementById("admLg").value.trim();
@@ -2116,7 +2531,8 @@ function saveShopDetails() {
   toast("Shop details saved");
 }
 
-function addStaff() {
+async function addStaff() {
+  if (!requireCap("manage_staff", "Add staff account")) return;
   const name = document.getElementById("stName").value.trim();
   const role = document.getElementById("stRole").value;
   const regNo = document.getElementById("stReg").value.trim();
@@ -2124,26 +2540,28 @@ function addStaff() {
 
   if (!name || pin.length < 4) return alert("Enter staff name and a PIN of at least 4 digits.");
   if ((role === "In-Charge" || role === "Dispenser") && !regNo) {
-    return alert("Council registration number is required for In-Charge and Dispenser.");
+    return alert("Council registration number is required for Manager (In-Charge) and Counter Staff (Dispenser).");
   }
-  db.staff.push({
+  const newUser = {
     id: "U-" + Date.now(),
     name,
     role,
     regNo: regNo || "N/A",
-    pin,
-    fpEnabled: false,
-    fpCredId: "",
     active: true
-  });
-  addAudit("ADD_STAFF", `Added ${name} (${role}, Reg: ${regNo || "N/A"})`);
+  };
+  await setStaffPin(newUser, pin);
+  db.staff.push(newUser);
+  addAudit("ADD_STAFF", `Added ${name} as ${roleLabel(role)} (Reg: ${regNo || "N/A"}) with hashed PIN`);
   saveDb();
   renderView();
-  toast(`Added ${name}`);
+  toast(`Added ${name} (${roleLabel(role)})`);
 }
 
-populateLoginStaff();
-renderHeader();
+(async () => {
+  await migratePlainSecretsToHashes();
+  populateLoginStaff();
+  renderHeader();
+})();
 </script>
 </body>
 </html>

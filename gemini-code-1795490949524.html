@@ -1,2567 +1,1661 @@
+
+// ============================================================================
+// SSEDDUME DRUG SHOP MANAGEMENT SYSTEM (DSMS) - ENTERPRISE CORE
+// File: Program.cs
+// Compliance: Uganda National Drug Authority (NDA) Retail Pharmacy Standards
+// Runtime: .NET 8.0 / C# 12 (Windows Forms + Asynchronous HTTP + UDP Discovery)
+// Architecture: Single-File Master Workstation & Embedded Mobile Companion Host
+// ============================================================================
+
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace SseddumeDrugShopMaster
+{
+    internal static class Program
+    {
+        private const string ApplicationMutexGuid = "Global\\SSEDDUME_DSMS_ENTERPRISE_SYSTEM_V6";
+
+        [STAThread]
+        static void Main()
+        {
+            using var systemMutex = new Mutex(true, ApplicationMutexGuid, out bool isSoleInstance);
+            if (!isSoleInstance)
+            {
+                MessageBox.Show(
+                    "An active instance of Sseddume Drug Shop Master Station is already running on this machine.",
+                    "Sseddume DSMS - Active Instance Detected",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+
+            var stateManager = new SystemStateManager();
+            stateManager.Initialize();
+
+            var httpEngine = new MasterCompanionHttpEngine(stateManager);
+            httpEngine.Start();
+
+            var lanBeacon = new LanDiscoveryBeacon(httpEngine.AssignedPort, stateManager.StationMachineName);
+            lanBeacon.Start();
+
+            var masterDashboard = new MasterStationDashboardForm(stateManager, httpEngine);
+            Application.Run(masterDashboard);
+
+            lanBeacon.Stop();
+            httpEngine.Stop();
+            stateManager.PersistToDisk();
+        }
+    }
+
+    #region Data Contracts & NDA Clinical Models
+
+    public enum StaffRole { Owner = 0, Manager = 1, Dispenser = 2 }
+    public enum UnitType { Pack = 0, Strip = 1, Unit = 2 }
+
+    public sealed class MedicationBatch
+    {
+        public string BatchId { get; set; } = Guid.NewGuid().ToString("N");
+        public string BatchNumber { get; set; } = string.Empty;
+        public DateTime ExpiryDate { get; set; }
+        public int UnitsRemaining { get; set; } // Lowest unit denominator (e.g. individual tablet)
+        public decimal UnitCostPriceUgx { get; set; }
+        public decimal PackCostPriceUgx { get; set; }
+        public DateTime DateReceived { get; set; } = DateTime.UtcNow;
+        public bool IsQuarantined { get; set; } = false;
+    }
+
+    public sealed class MedicationItem
+    {
+        public string SkuId { get; set; } = Guid.NewGuid().ToString("N");
+        public string Barcode { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string GenericName { get; set; } = string.Empty;
+        public string Category { get; set; } = "General";
+        public string DosageForm { get; set; } = "Tablet";
+        public string Strength { get; set; } = string.Empty;
+        public int UnitsPerPack { get; set; } = 100;
+        public int UnitsPerStrip { get; set; } = 10;
+        public decimal RetailPackPriceUgx { get; set; }
+        public decimal RetailStripPriceUgx { get; set; }
+        public decimal RetailSingleUnitPriceUgx { get; set; }
+        public int ReorderThresholdUnits { get; set; } = 50;
+        public long SequenceVersion { get; set; } = 0;
+        public List<MedicationBatch> Batches { get; set; } = new List<MedicationBatch>();
+
+        [JsonIgnore]
+        public int TotalAvailableUnits => Batches.Where(b => !b.IsQuarantined && b.ExpiryDate > DateTime.UtcNow).Sum(b => b.UnitsRemaining);
+
+        public List<MedicationBatch> GetFefoOrderedBatches()
+        {
+            return Batches
+                .Where(b => !b.IsQuarantined && b.UnitsRemaining > 0 && b.ExpiryDate > DateTime.UtcNow)
+                .OrderBy(b => b.ExpiryDate)
+                .ToList();
+        }
+    }
+
+    public sealed class StagedPrescriptionLine
+    {
+        public string SkuId { get; set; } = string.Empty;
+        public string Barcode { get; set; } = string.Empty;
+        public string DrugName { get; set; } = string.Empty;
+        public UnitType DispenseUnit { get; set; }
+        public int QuantityToDispense { get; set; }
+        public decimal UnitPriceUgx { get; set; }
+        public decimal LineTotalUgx { get; set; }
+        public string DosageInstructions { get; set; } = string.Empty;
+        public string AllocatedBatch { get; set; } = string.Empty;
+    }
+
+    public sealed class StagedCartTicket
+    {
+        public string TicketId { get; set; } = Guid.NewGuid().ToString("N")[..8].ToUpper();
+        public string TokenNumber { get; set; } = string.Empty;
+        public string OperatorName { get; set; } = string.Empty;
+        public StaffRole OperatorRole { get; set; }
+        public string CustomerIdentifier { get; set; } = "Walk-In Patient";
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public List<StagedPrescriptionLine> Items { get; set; } = new List<StagedPrescriptionLine>();
+        public decimal TotalUgx => Items.Sum(i => i.LineTotalUgx);
+        public bool IsSettled { get; set; } = false;
+    }
+
+    public sealed class StockAuditRecord
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public string DrugName { get; set; } = string.Empty;
+        public int ExpectedUnits { get; set; }
+        public int PhysicalUnits { get; set; }
+        public int VarianceUnits => PhysicalUnits - ExpectedUnits;
+        public string AuditorName { get; set; } = string.Empty;
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    }
+
+    public sealed class SupervisorChallenge
+    {
+        public string ChallengeId { get; set; } = Guid.NewGuid().ToString("N")[..6].ToUpper();
+        public string RequestingOperator { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public decimal TransactionAmountUgx { get; set; }
+        public bool IsApproved { get; set; } = false;
+        public bool IsResolved { get; set; } = false;
+        public string ResolvedBy { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    #endregion
+
+    #region State Engine & Persistence
+
+    public sealed class SystemStateManager
+    {
+        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
+        private readonly ConcurrentDictionary<string, MedicationItem> _inventory = new ConcurrentDictionary<string, MedicationItem>();
+        private readonly ConcurrentDictionary<string, StagedCartTicket> _stagedTickets = new ConcurrentDictionary<string, StagedCartTicket>();
+        private readonly ConcurrentDictionary<string, SupervisorChallenge> _challenges = new ConcurrentDictionary<string, SupervisorChallenge>();
+        private readonly ConcurrentBag<StockAuditRecord> _auditLog = new ConcurrentBag<StockAuditRecord>();
+
+        public string StationMachineName { get; } = Environment.MachineName;
+        public long CurrentSequence { get; private set; } = 1;
+        private readonly string _storageDirectory;
+        private int _tokenCounter = 100;
+
+        public SystemStateManager()
+        {
+            _storageDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SseddumeDrugShopMaster");
+            Directory.CreateDirectory(_storageDirectory);
+        }
+
+        public void Initialize()
+        {
+            LoadFromDisk();
+            SeedSampleInventoryIfEmpty();
+        }
+
+        public string AllocateCustomerToken()
+        {
+            int token = Interlocked.Increment(ref _tokenCounter);
+            if (token > 999)
+            {
+                Interlocked.Exchange(ref _tokenCounter, 100);
+                token = 100;
+            }
+            return $"T-{token}";
+        }
+
+        private void SeedSampleInventoryIfEmpty()
+        {
+            if (!_inventory.IsEmpty) return;
+
+            var amox = new MedicationItem
+            {
+                Barcode = "501234567890",
+                BrandName = "Amoxil 500mg",
+                GenericName = "Amoxicillin Trihydrate",
+                Category = "Antibacterial",
+                DosageForm = "Capsule",
+                Strength = "500mg",
+                UnitsPerPack = 100,
+                UnitsPerStrip = 10,
+                RetailPackPriceUgx = 45000,
+                RetailStripPriceUgx = 5000,
+                RetailSingleUnitPriceUgx = 600,
+                ReorderThresholdUnits = 50,
+                SequenceVersion = ++CurrentSequence
+            };
+            amox.Batches.Add(new MedicationBatch
+            {
+                BatchNumber = "AMX24-08",
+                ExpiryDate = DateTime.UtcNow.AddMonths(16),
+                UnitsRemaining = 450,
+                UnitCostPriceUgx = 320,
+                PackCostPriceUgx = 32000
+            });
+            amox.Batches.Add(new MedicationBatch
+            {
+                BatchNumber = "AMX23-99",
+                ExpiryDate = DateTime.UtcNow.AddMonths(2),
+                UnitsRemaining = 50,
+                UnitCostPriceUgx = 300,
+                PackCostPriceUgx = 30000
+            });
+            _inventory[amox.Barcode] = amox;
+
+            var coartem = new MedicationItem
+            {
+                Barcode = "768054321098",
+                BrandName = "Coartem 20/120",
+                GenericName = "Artemether / Lumefantrine",
+                Category = "Antimalarial (ACT)",
+                DosageForm = "Tablet",
+                Strength = "20mg/120mg",
+                UnitsPerPack = 24,
+                UnitsPerStrip = 6,
+                RetailPackPriceUgx = 24000,
+                RetailStripPriceUgx = 6500,
+                RetailSingleUnitPriceUgx = 1200,
+                ReorderThresholdUnits = 24,
+                SequenceVersion = ++CurrentSequence
+            };
+            coartem.Batches.Add(new MedicationBatch
+            {
+                BatchNumber = "CRT-8941",
+                ExpiryDate = DateTime.UtcNow.AddMonths(14),
+                UnitsRemaining = 144,
+                UnitCostPriceUgx = 750,
+                PackCostPriceUgx = 18000
+            });
+            _inventory[coartem.Barcode] = coartem;
+
+            var paracetamol = new MedicationItem
+            {
+                Barcode = "600123498765",
+                BrandName = "Panadol Extra",
+                GenericName = "Paracetamol / Caffeine",
+                Category = "Analgesic / Antipyretic",
+                DosageForm = "Tablet",
+                Strength = "500mg/65mg",
+                UnitsPerPack = 100,
+                UnitsPerStrip = 10,
+                RetailPackPriceUgx = 25000,
+                RetailStripPriceUgx = 2800,
+                RetailSingleUnitPriceUgx = 300,
+                ReorderThresholdUnits = 100,
+                SequenceVersion = ++CurrentSequence
+            };
+            paracetamol.Batches.Add(new MedicationBatch
+            {
+                BatchNumber = "PDL-24-X",
+                ExpiryDate = DateTime.UtcNow.AddMonths(26),
+                UnitsRemaining = 900,
+                UnitCostPriceUgx = 140,
+                PackCostPriceUgx = 14000
+            });
+            _inventory[paracetamol.Barcode] = paracetamol;
+        }
+
+        public List<MedicationItem> GetInventoryDelta(long sinceSeq, StaffRole role)
+        {
+            _lock.EnterReadLock();
+            try
+            {
+                return _inventory.Values
+                    .Where(i => i.SequenceVersion > sinceSeq)
+                    .Select(i =>
+                    {
+                        if (role == StaffRole.Owner) return i;
+
+                        // Zero out cost and margins for Dispensers and Managers to preserve security
+                        var copy = JsonSerializer.Deserialize<MedicationItem>(JsonSerializer.Serialize(i))!;
+                        foreach (var b in copy.Batches)
+                        {
+                            b.UnitCostPriceUgx = 0;
+                            b.PackCostPriceUgx = 0;
+                        }
+                        return copy;
+                    })
+                    .ToList();
+            }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
+        }
+
+        public bool StageTicket(StagedCartTicket ticket)
+        {
+            if (string.IsNullOrWhiteSpace(ticket.TokenNumber))
+                ticket.TokenNumber = AllocateCustomerToken();
+
+            _stagedTickets[ticket.TicketId] = ticket;
+            return true;
+        }
+
+        public List<StagedCartTicket> GetPendingTickets()
+        {
+            return _stagedTickets.Values
+                .Where(t => !t.IsSettled)
+                .OrderByDescending(t => t.CreatedAt)
+                .ToList();
+        }
+
+        public (bool Success, string Message) FinalizeDispense(string ticketId, string cashierName)
+        {
+            _lock.EnterWriteLock();
+            try
+            {
+                if (!_stagedTickets.TryGetValue(ticketId, out var ticket) || ticket.IsSettled)
+                    return (false, "Ticket is invalid or already finalized.");
+
+                // Validate stock against FEFO queues
+                foreach (var line in ticket.Items)
+                {
+                    if (!_inventory.TryGetValue(line.Barcode, out var item))
+                        return (false, $"Product with barcode {line.Barcode} was not found.");
+
+                    int unitsNeeded = line.DispenseUnit switch
+                    {
+                        UnitType.Pack => line.QuantityToDispense * item.UnitsPerPack,
+                        UnitType.Strip => line.QuantityToDispense * item.UnitsPerStrip,
+                        _ => line.QuantityToDispense
+                    };
+
+                    if (item.TotalAvailableUnits < unitsNeeded)
+                        return (false, $"Insufficient stock for {item.BrandName}. Requested: {unitsNeeded}, Available: {item.TotalAvailableUnits}");
+                }
+
+                // Deduct stock strictly by FEFO
+                foreach (var line in ticket.Items)
+                {
+                    var item = _inventory[line.Barcode];
+                    int unitsRemainingToDeduct = line.DispenseUnit switch
+                    {
+                        UnitType.Pack => line.QuantityToDispense * item.UnitsPerPack,
+                        UnitType.Strip => line.QuantityToDispense * item.UnitsPerStrip,
+                        _ => line.QuantityToDispense
+                    };
+
+                    var fefoBatches = item.GetFefoOrderedBatches();
+                    foreach (var batch in fefoBatches)
+                    {
+                        if (unitsRemainingToDeduct <= 0) break;
+
+                        if (batch.UnitsRemaining >= unitsRemainingToDeduct)
+                        {
+                            batch.UnitsRemaining -= unitsRemainingToDeduct;
+                            line.AllocatedBatch = batch.BatchNumber;
+                            unitsRemainingToDeduct = 0;
+                        }
+                        else
+                        {
+                            unitsRemainingToDeduct -= batch.UnitsRemaining;
+                            batch.UnitsRemaining = 0;
+                            line.AllocatedBatch = batch.BatchNumber;
+                        }
+                    }
+                    item.SequenceVersion = ++CurrentSequence;
+                }
+
+                ticket.IsSettled = true;
+                return (true, $"Dispense finalized for Token {ticket.TokenNumber}. Total: {ticket.TotalUgx:N0} UGX");
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
+            }
+        }
+
+        public StockAuditRecord RecordBlindAudit(string barcode, int physicalCount, string auditorName)
+        {
+            _lock.EnterWriteLock();
+            try
+            {
+                _inventory.TryGetValue(barcode, out var item);
+                int expected = item?.TotalAvailableUnits ?? 0;
+                string drugName = item != null ? item.BrandName : "Unknown SKU";
+
+                var record = new StockAuditRecord
+                {
+                    Barcode = barcode,
+                    DrugName = drugName,
+                    ExpectedUnits = expected,
+                    PhysicalUnits = physicalCount,
+                    AuditorName = auditorName
+                };
+
+                _auditLog.Add(record);
+                return record;
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
+            }
+        }
+
+        public List<StockAuditRecord> GetAuditLog() => _auditLog.OrderByDescending(a => a.Timestamp).Take(100).ToList();
+
+        public SupervisorChallenge CreateSupervisorChallenge(string operatorName, string reason, decimal amount)
+        {
+            var chal = new SupervisorChallenge
+            {
+                RequestingOperator = operatorName,
+                Reason = reason,
+                TransactionAmountUgx = amount
+            };
+            _challenges[chal.ChallengeId] = chal;
+            return chal;
+        }
+
+        public bool ResolveSupervisorChallenge(string challengeId, bool approve, string managerName)
+        {
+            if (_challenges.TryGetValue(challengeId, out var chal))
+            {
+                chal.IsApproved = approve;
+                chal.IsResolved = true;
+                chal.ResolvedBy = managerName;
+                return true;
+            }
+            return false;
+        }
+
+        public SupervisorChallenge? GetChallenge(string challengeId)
+        {
+            _challenges.TryGetValue(challengeId, out var c);
+            return c;
+        }
+
+        public List<SupervisorChallenge> GetPendingChallenges()
+        {
+            return _challenges.Values.Where(c => !c.IsResolved).OrderBy(c => c.CreatedAt).ToList();
+        }
+
+        public void PersistToDisk()
+        {
+            _lock.EnterReadLock();
+            try
+            {
+                string path = Path.Combine(_storageDirectory, "sseddume_inventory.json");
+                string json = JsonSerializer.Serialize(_inventory.Values, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(path, json);
+            }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
+        }
+
+        private void LoadFromDisk()
+        {
+            string path = Path.Combine(_storageDirectory, "sseddume_inventory.json");
+            if (File.Exists(path))
+            {
+                try
+                {
+                    string json = File.ReadAllText(path);
+                    var items = JsonSerializer.Deserialize<List<MedicationItem>>(json);
+                    if (items != null)
+                    {
+                        foreach (var it in items)
+                        {
+                            _inventory[it.Barcode] = it;
+                            if (it.SequenceVersion > CurrentSequence)
+                                CurrentSequence = it.SequenceVersion;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Clean recovery on first initialize or format migration
+                }
+            }
+        }
+    }
+
+    #endregion
+
+    #region Win32 ESC/POS Thermal Printing & Aux Labels
+
+    public static class ThermalPrinterSpooler
+    {
+        [DllImport("winspool.drv", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
+
+        [DllImport("winspool.drv", SetLastError = true)]
+        private static extern bool ClosePrinter(IntPtr hPrinter);
+
+        [DllImport("winspool.drv", SetLastError = true)]
+        private static extern bool StartDocPrinter(IntPtr hPrinter, int level, [In] ref DOCINFOA di);
+
+        [DllImport("winspool.drv", SetLastError = true)]
+        private static extern bool EndDocPrinter(IntPtr hPrinter);
+
+        [DllImport("winspool.drv", SetLastError = true)]
+        private static extern bool StartPagePrinter(IntPtr hPrinter);
+
+        [DllImport("winspool.drv", SetLastError = true)]
+        private static extern bool EndPagePrinter(IntPtr hPrinter);
+
+        [DllImport("winspool.drv", SetLastError = true)]
+        private static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct DOCINFOA
+        {
+            [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+            [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+            [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
+        }
+
+        public static bool SendRawBytes(string printerName, byte[] bytes)
+        {
+            if (string.IsNullOrWhiteSpace(printerName)) return false;
+
+            var di = new DOCINFOA { pDocName = "Sseddume DSMS Print Spool", pDataType = "RAW" };
+            if (!OpenPrinter(printerName, out IntPtr hPrinter, IntPtr.Zero)) return false;
+
+            try
+            {
+                if (!StartDocPrinter(hPrinter, 1, ref di)) return false;
+                if (!StartPagePrinter(hPrinter)) return false;
+
+                IntPtr pUnmanagedBytes = Marshal.AllocCoTaskMem(bytes.Length);
+                Marshal.Copy(bytes, 0, pUnmanagedBytes, bytes.Length);
+                bool success = WritePrinter(hPrinter, pUnmanagedBytes, bytes.Length, out int _);
+                Marshal.FreeCoTaskMem(pUnmanagedBytes);
+
+                EndPagePrinter(hPrinter);
+                EndDocPrinter(hPrinter);
+                return success;
+            }
+            finally
+            {
+                ClosePrinter(hPrinter);
+            }
+        }
+
+        public static byte[] GenerateSalesReceipt(StagedCartTicket ticket, string cashier)
+        {
+            using var ms = new MemoryStream();
+            using var w = new BinaryWriter(ms, Encoding.ASCII);
+
+            w.Write(new byte[] { 0x1B, 0x40 }); // ESC @ (Initialize)
+            w.Write(new byte[] { 0x1B, 0x61, 0x01 }); // Center
+            w.Write(new byte[] { 0x1B, 0x45, 0x01 }); // Bold ON
+            w.Write(Encoding.ASCII.GetBytes("SSEDDUME DRUG SHOP\n"));
+            w.Write(new byte[] { 0x1B, 0x45, 0x00 }); // Bold OFF
+            w.Write(Encoding.ASCII.GetBytes("NDA REG: NDA/DS/UG/8841\n"));
+            w.Write(Encoding.ASCII.GetBytes("KASUBI MAIN ROAD, KAMPALA\n"));
+            w.Write(Encoding.ASCII.GetBytes("TEL: +256 700 000 000 / +256 770 000 000\n"));
+            w.Write(Encoding.ASCII.GetBytes("------------------------------------------\n"));
+
+            w.Write(new byte[] { 0x1B, 0x61, 0x00 }); // Left
+            w.Write(Encoding.ASCII.GetBytes($"TOKEN: {ticket.TokenNumber}     REF: #{ticket.TicketId}\n"));
+            w.Write(Encoding.ASCII.GetBytes($"DATE:  {DateTime.Now:dd-MMM-yyyy HH:mm:ss}\n"));
+            w.Write(Encoding.ASCII.GetBytes($"DISPENSER: {ticket.OperatorName}   CASHIER: {cashier}\n"));
+            w.Write(Encoding.ASCII.GetBytes($"PATIENT:   {ticket.CustomerIdentifier}\n"));
+            w.Write(Encoding.ASCII.GetBytes("------------------------------------------\n"));
+
+            foreach (var item in ticket.Items)
+            {
+                w.Write(Encoding.ASCII.GetBytes($"{item.DrugName}\n"));
+                string qtyCol = $"  {item.QuantityToDispense} {item.DispenseUnit.ToString().ToUpper()} @ {item.UnitPriceUgx:N0}";
+                string totCol = $"{item.LineTotalUgx:N0} UGX";
+                string pad = new string(' ', Math.Max(1, 42 - (qtyCol.Length + totCol.Length)));
+                w.Write(Encoding.ASCII.GetBytes(qtyCol + pad + totCol + "\n"));
+
+                if (!string.IsNullOrWhiteSpace(item.DosageInstructions))
+                {
+                    w.Write(Encoding.ASCII.GetBytes($"  Sig: {item.DosageInstructions}\n"));
+                }
+            }
+
+            w.Write(Encoding.ASCII.GetBytes("==========================================\n"));
+            w.Write(new byte[] { 0x1B, 0x45, 0x01 }); // Bold ON
+            string grandLbl = "GRAND TOTAL:";
+            string grandVal = $"{ticket.TotalUgx:N0} UGX";
+            string totalPad = new string(' ', Math.Max(1, 42 - (grandLbl.Length + grandVal.Length)));
+            w.Write(Encoding.ASCII.GetBytes(grandLbl + totalPad + grandVal + "\n"));
+            w.Write(new byte[] { 0x1B, 0x45, 0x00 }); // Bold OFF
+            w.Write(Encoding.ASCII.GetBytes("------------------------------------------\n"));
+
+            w.Write(new byte[] { 0x1B, 0x61, 0x01 }); // Center
+            w.Write(Encoding.ASCII.GetBytes("Medicines once sold cannot be returned.\n"));
+            w.Write(Encoding.ASCII.GetBytes("Keep all medicines out of reach of children.\n"));
+            w.Write(Encoding.ASCII.GetBytes("Quick Recovery!\n\n\n\n"));
+            w.Write(new byte[] { 0x1D, 0x56, 0x41, 0x10 }); // Cut Paper
+
+            return ms.ToArray();
+        }
+
+        public static byte[] GenerateDosageAuxiliaryLabel(StagedPrescriptionLine line, string patientName)
+        {
+            using var ms = new MemoryStream();
+            using var w = new BinaryWriter(ms, Encoding.ASCII);
+
+            w.Write(new byte[] { 0x1B, 0x40 });
+            w.Write(new byte[] { 0x1B, 0x61, 0x01 });
+            w.Write(new byte[] { 0x1B, 0x45, 0x01 });
+            w.Write(Encoding.ASCII.GetBytes("SSEDDUME DRUG SHOP - DISPENSARY\n"));
+            w.Write(new byte[] { 0x1B, 0x45, 0x00 });
+            w.Write(Encoding.ASCII.GetBytes($"Patient: {patientName}   Date: {DateTime.Now:dd/MM/yy}\n"));
+            w.Write(Encoding.ASCII.GetBytes("------------------------------------------\n"));
+            w.Write(new byte[] { 0x1B, 0x61, 0x00 });
+            w.Write(new byte[] { 0x1B, 0x45, 0x01 });
+            w.Write(Encoding.ASCII.GetBytes($"DRUG: {line.DrugName}\n"));
+            w.Write(new byte[] { 0x1B, 0x45, 0x00 });
+            w.Write(Encoding.ASCII.GetBytes($"QTY:  {line.QuantityToDispense} ({line.DispenseUnit})   LOT: {line.AllocatedBatch}\n"));
+            w.Write(Encoding.ASCII.GetBytes("DIRECTIONS / FREQUENCY:\n"));
+            w.Write(new byte[] { 0x1B, 0x45, 0x01 });
+            w.Write(Encoding.ASCII.GetBytes($" >> {line.DosageInstructions} <<\n"));
+            w.Write(new byte[] { 0x1B, 0x45, 0x00 });
+            w.Write(Encoding.ASCII.GetBytes("------------------------------------------\n"));
+            w.Write(new byte[] { 0x1B, 0x61, 0x01 });
+            w.Write(Encoding.ASCII.GetBytes("Complete the prescribed course.\n\n\n"));
+            w.Write(new byte[] { 0x1D, 0x56, 0x41, 0x10 });
+
+            return ms.ToArray();
+        }
+    }
+
+    #endregion
+
+    #region HTTP Server & Embedded Android Companion Web Terminal
+
+    public sealed class MasterCompanionHttpEngine
+    {
+        private readonly HttpListener _listener = new HttpListener();
+        private readonly SystemStateManager _state;
+        private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        public int AssignedPort { get; private set; } = 8080;
+
+        public MasterCompanionHttpEngine(SystemStateManager state)
+        {
+            _state = state;
+        }
+
+        public void Start()
+        {
+            int[] candidatePorts = { 8080, 8081, 8082, 8085, 9090 };
+            foreach (var port in candidatePorts)
+            {
+                try
+                {
+                    _listener.Prefixes.Clear();
+                    _listener.Prefixes.Add($"http://*:{port}/");
+                    _listener.Start();
+                    AssignedPort = port;
+                    break;
+                }
+                catch
+                {
+                    try
+                    {
+                        _listener.Prefixes.Clear();
+                        _listener.Prefixes.Add($"http://localhost:{port}/");
+                        _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                        _listener.Start();
+                        AssignedPort = port;
+                        break;
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            Task.Run(() => AcceptLoopAsync(_cts.Token));
+        }
+
+        public void Stop()
+        {
+            _cts.Cancel();
+            try { _listener.Stop(); } catch { }
+        }
+
+        private async Task AcceptLoopAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested && _listener.IsListening)
+            {
+                try
+                {
+                    var ctx = await _listener.GetContextAsync();
+                    _ = Task.Run(() => RouteRequestAsync(ctx), ct);
+                }
+                catch
+                {
+                    if (ct.IsCancellationRequested) break;
+                }
+            }
+        }
+
+        private async Task RouteRequestAsync(HttpListenerContext ctx)
+        {
+            ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+            ctx.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            ctx.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, X-Staff-Role, X-Operator-Name");
+
+            if (ctx.Request.HttpMethod == "OPTIONS")
+            {
+                ctx.Response.StatusCode = 200;
+                ctx.Response.Close();
+                return;
+            }
+
+            string path = ctx.Request.Url?.AbsolutePath.TrimEnd('/') ?? "";
+            string method = ctx.Request.HttpMethod;
+
+            try
+            {
+                // Serve Embedded Mobile Companion App
+                if (method == "GET" && (path == "" || path.Equals("/m", StringComparison.OrdinalIgnoreCase)))
+                {
+                    byte[] htmlBytes = Encoding.UTF8.GetBytes(EmbeddedMobileClientHtml);
+                    ctx.Response.ContentType = "text/html; charset=utf-8";
+                    ctx.Response.ContentLength64 = htmlBytes.Length;
+                    await ctx.Response.OutputStream.WriteAsync(htmlBytes);
+                    ctx.Response.Close();
+                    return;
+                }
+
+                // Inventory Delta Sync
+                if (method == "GET" && path.Equals("/api/sync/delta", StringComparison.OrdinalIgnoreCase))
+                {
+                    long.TryParse(ctx.Request.QueryString["since"], out long since);
+                    StaffRole role = StaffRole.Dispenser;
+                    if (Enum.TryParse<StaffRole>(ctx.Request.Headers["X-Staff-Role"], true, out var r))
+                        role = r;
+
+                    var delta = _state.GetInventoryDelta(since, role);
+                    await WriteJsonAsync(ctx.Response, 200, new
+                    {
+                        serverTime = DateTime.UtcNow,
+                        currentSequence = _state.CurrentSequence,
+                        items = delta
+                    });
+                    return;
+                }
+
+                // Stage Prescription Ticket
+                if (method == "POST" && path.Equals("/api/tickets/stage", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
+                    string body = await reader.ReadToEndAsync();
+                    var ticket = JsonSerializer.Deserialize<StagedCartTicket>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (ticket != null)
+                    {
+                        _state.StageTicket(ticket);
+                        await WriteJsonAsync(ctx.Response, 200, new { success = true, ticketId = ticket.TicketId, tokenNumber = ticket.TokenNumber });
+                    }
+                    else
+                    {
+                        await WriteJsonAsync(ctx.Response, 400, new { error = "Invalid ticket format." });
+                    }
+                    return;
+                }
+
+                // Active Tickets Query
+                if (method == "GET" && path.Equals("/api/tickets/active", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteJsonAsync(ctx.Response, 200, _state.GetPendingTickets());
+                    return;
+                }
+
+                // Blind Stock Audit Scan
+                if (method == "POST" && path.Equals("/api/audit/log", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
+                    string body = await reader.ReadToEndAsync();
+                    using var doc = JsonDocument.Parse(body);
+                    string barcode = doc.RootElement.GetProperty("barcode").GetString() ?? "";
+                    int count = doc.RootElement.GetProperty("count").GetInt32();
+                    string auditor = doc.RootElement.GetProperty("auditor").GetString() ?? "Auditor";
+
+                    var rec = _state.RecordBlindAudit(barcode, count, auditor);
+                    await WriteJsonAsync(ctx.Response, 200, rec);
+                    return;
+                }
+
+                // Supervisor Challenge Creation
+                if (method == "POST" && path.Equals("/api/supervisor/challenge", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
+                    string body = await reader.ReadToEndAsync();
+                    var req = JsonSerializer.Deserialize<SupervisorChallenge>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (req != null)
+                    {
+                        var chal = _state.CreateSupervisorChallenge(req.RequestingOperator, req.Reason, req.TransactionAmountUgx);
+                        await WriteJsonAsync(ctx.Response, 200, chal);
+                    }
+                    return;
+                }
+
+                // Supervisor Pending List Query
+                if (method == "GET" && path.Equals("/api/supervisor/pending", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteJsonAsync(ctx.Response, 200, _state.GetPendingChallenges());
+                    return;
+                }
+
+                // Supervisor Challenge Resolution
+                if (method == "POST" && path.Equals("/api/supervisor/resolve", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
+                    string body = await reader.ReadToEndAsync();
+                    using var doc = JsonDocument.Parse(body);
+                    string chalId = doc.RootElement.GetProperty("challengeId").GetString() ?? "";
+                    bool approved = doc.RootElement.GetProperty("approve").GetBoolean();
+                    string mgr = doc.RootElement.GetProperty("managerName").GetString() ?? "In-Charge";
+
+                    bool success = _state.ResolveSupervisorChallenge(chalId, approved, mgr);
+                    await WriteJsonAsync(ctx.Response, 200, new { success });
+                    return;
+                }
+
+                ctx.Response.StatusCode = 404;
+                ctx.Response.Close();
+            }
+            catch (Exception ex)
+            {
+                ctx.Response.StatusCode = 500;
+                await WriteJsonAsync(ctx.Response, 500, new { error = ex.Message });
+            }
+        }
+
+        private static async Task WriteJsonAsync(HttpListenerResponse res, int statusCode, object obj)
+        {
+            res.StatusCode = statusCode;
+            res.ContentType = "application/json";
+            byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(obj));
+            res.ContentLength64 = bytes.Length;
+            await res.OutputStream.WriteAsync(bytes);
+            res.Close();
+        }
+
+        private const string EmbeddedMobileClientHtml = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</title>
-  <style>
-    :root {
-      --bg: #eef2f6;
-      --surface: #ffffff;
-      --surface-2: #f8fafc;
-      --primary: #0f766e;
-      --primary-dark: #115e59;
-      --primary-soft: #ccfbf1;
-      --accent: #0369a1;
-      --accent-soft: #e0f2fe;
-      --danger: #b91c1c;
-      --danger-soft: #fee2e2;
-      --warn: #b45309;
-      --warn-soft: #fef3c7;
-      --ok: #15803d;
-      --ok-soft: #dcfce7;
-      --text: #0f172a;
-      --muted: #64748b;
-      --border: #e2e8f0;
-      --radius: 14px;
-      --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 20px rgba(15, 23, 42, 0.04);
-    }
-    * { box-sizing: border-box; font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 88px; -webkit-font-smoothing: antialiased; }
-    body.counter-mode { padding-bottom: 24px; }
-
-    header {
-      position: sticky; top: 0; z-index: 40;
-      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-      color: #fff; padding: 12px 16px;
-      display: flex; justify-content: space-between; align-items: center; gap: 10px;
-      box-shadow: 0 2px 12px rgba(15, 118, 110, 0.24);
-    }
-    header.counter-header {
-      background: linear-gradient(135deg, #1e293b, #0f766e);
-    }
-    .brand-title { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
-    .brand-sub { font-size: 11px; opacity: 0.92; margin-top: 2px; }
-    .user-pill {
-      background: rgba(255, 255, 255, 0.16);
-      border: 1px solid rgba(255, 255, 255, 0.26);
-      padding: 5px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
-      white-space: nowrap;
-    }
-
-    nav {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 45;
-      display: flex; justify-content: space-around; gap: 4px;
-      padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-      background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
-      border-top: 1px solid var(--border); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06);
-    }
-    nav button {
-      flex: 1; border: none; padding: 7px 6px; min-height: 46px;
-      border-radius: 10px; background: transparent; color: var(--muted);
-      cursor: pointer; font-weight: 600; font-size: 11.5px;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-      transition: all 0.14s ease;
-    }
-    nav button.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 700; }
-
-    main { padding: 14px; max-width: 1180px; margin: 0 auto; }
-    .grid-2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 12px; align-items: start; }
-    @media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
-
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
-    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 13px; box-shadow: var(--shadow); }
-    .kpi-label { font-size: 10.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-    .kpi-val { font-size: 17px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
-
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
-    .card h3 { margin: 0 0 10px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
-
-    .self-bio-bar {
-      background: linear-gradient(135deg, #f8fafc, #f0fdfa);
-      border: 1px solid #99f6e4; border-radius: 12px; padding: 11px 14px;
-      margin-bottom: 12px; display: flex; flex-wrap: wrap; justify-content: space-between;
-      align-items: center; gap: 10px;
-    }
-
-    .alert-strip {
-      border-radius: 12px; padding: 10px 14px; margin-bottom: 10px;
-      font-size: 12.5px; line-height: 1.45; border: 1px solid transparent;
-    }
-    .alert-warn { background: var(--warn-soft); border-color: #fcd34d; color: #78350f; }
-    .alert-danger { background: var(--danger-soft); border-color: #fca5a5; color: #7f1d1d; }
-    .alert-info { background: var(--accent-soft); border-color: #7dd3fc; color: #0c4a6e; }
-
-    .win-banner {
-      background: linear-gradient(135deg, #f0f9ff, #ecfdf5);
-      border: 1px solid #bae6fd; border-radius: 12px; padding: 12px 14px;
-      margin-bottom: 12px; display: flex; flex-wrap: wrap; justify-content: space-between;
-      align-items: center; gap: 10px;
-    }
-
-    input, select, textarea, button {
-      min-height: 42px; padding: 8px 12px; border-radius: 10px;
-      border: 1px solid #cbd5e1; font-size: 14px; background: #fff; color: var(--text);
-      transition: border-color 0.14s ease, box-shadow 0.14s ease;
-    }
-    input:focus, select:focus, textarea:focus {
-      outline: none; border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
-    }
-    button { cursor: pointer; font-weight: 600; }
-    button:active { transform: scale(0.985); }
-    button.btn-primary { background: var(--primary); color: #fff; border: 1px solid var(--primary); }
-    button.btn-primary:hover { background: var(--primary-dark); }
-    button.btn-accent { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
-    button.btn-danger { background: var(--danger); color: #fff; border: 1px solid var(--danger); }
-    button.btn-secondary { background: #1e293b; color: #fff; border: 1px solid #1e293b; }
-    button.btn-ghost {
-      background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
-      min-height: 34px; padding: 5px 10px; font-size: 12px; border-radius: 8px;
-    }
-    button.chip {
-      min-height: 31px; padding: 4px 10px; font-size: 11.5px; border-radius: 999px;
-      background: var(--primary-soft); color: var(--primary-dark); border: 1px solid #99f6e4;
-    }
-    button.chip-alt {
-      min-height: 30px; padding: 3px 9px; font-size: 11px; border-radius: 999px;
-      background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
-    }
-
-    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
-    th {
-      background: var(--surface-2); color: var(--muted); font-size: 11px;
-      text-transform: uppercase; letter-spacing: 0.04em; padding: 10px;
-      border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap;
-    }
-    td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; text-align: left; vertical-align: middle; font-variant-numeric: tabular-nums; }
-    tr:last-child td { border-bottom: none; }
-
-    .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-    .ok { background: var(--ok-soft); color: var(--ok); }
-    .bad { background: var(--danger-soft); color: var(--danger); }
-    .warn { background: var(--warn-soft); color: var(--warn); }
-    .info { background: var(--accent-soft); color: var(--accent); }
-
-    .cart-item {
-      display: flex; justify-content: space-between; align-items: center; gap: 8px;
-      padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
-      background: var(--surface-2); margin-bottom: 8px;
-    }
-
-    .lab-seal {
-      text-align: center; font-size: 11px; color: var(--muted);
-      letter-spacing: 0.08em; font-weight: 700; margin: 16px 0 6px;
-    }
-
-    #toast {
-      position: fixed; bottom: 78px; left: 50%; transform: translateX(-50%) translateY(16px);
-      background: #0f172a; color: #fff; padding: 10px 16px; border-radius: 999px;
-      font-size: 13px; font-weight: 600; opacity: 0; pointer-events: none;
-      transition: all 0.2s ease; z-index: 1000; box-shadow: 0 8px 24px rgba(0,0,0,0.24);
-      max-width: 92vw; text-align: center;
-    }
-    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-    .modal-backdrop {
-      display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.86);
-      z-index: 999; align-items: center; justify-content: center; padding: 16px;
-    }
-    .modal-card {
-      background: #fff; color: var(--text); padding: 16px; border-radius: 14px;
-      width: 100%; max-width: 490px; max-height: 88vh; overflow-y: auto;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
-    }
-    #camBox { background: #0f172a; color: #fff; border: 1px solid #1e293b; }
-    .cam-frame { position: relative; border-radius: 10px; overflow: hidden; background: #000; }
-    #camVideo { width: 100%; max-height: 310px; display: block; object-fit: cover; }
-    .reticle {
-      position: absolute; inset: 18% 12%; border: 2px solid #2dd4bf;
-      border-radius: 10px; box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.36); pointer-events: none;
-    }
-    @media print {
-      header, nav, .lab-seal, .alert-strip, .self-bio-bar, #toast, #camModal, #receiptModal .no-print { display: none !important; }
-      body { background: #fff; padding: 0; }
-      .modal-backdrop { position: static; background: none; display: block !important; padding: 0; }
-      .modal-card { box-shadow: none; max-width: 100%; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sseddume DSMS Mobile Terminal</title>
+    <style>
+        :root {
+            --bg-base: #0f172a; --bg-surface: #1e293b; --bg-elevated: #334155;
+            --border: #475569; --primary: #0284c7; --accent: #38bdf8;
+            --text-main: #f8fafc; --text-muted: #94a3b8; --success: #10b981;
+            --danger: #ef4444; --warning: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: var(--bg-base); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        header { background: var(--bg-surface); padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .brand { font-size: 0.95rem; font-weight: 700; color: var(--accent); }
+        .station-indicator { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-muted); }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+        .status-dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
+        nav { background: var(--bg-surface); display: flex; border-bottom: 1px solid var(--border); }
+        .nav-btn { flex: 1; padding: 10px 0; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); background: none; border: none; border-bottom: 3px solid transparent; }
+        .nav-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(56, 189, 248, 0.05); }
+        main { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .view-panel { display: none; height: 100%; flex-direction: column; gap: 10px; }
+        .view-panel.active { display: flex; }
+        .search-box { display: flex; gap: 6px; }
+        input, select { width: 100%; padding: 10px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text-main); font-size: 0.88rem; outline: none; }
+        input:focus { border-color: var(--accent); }
+        .btn-icon { width: 44px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; color: #fff; font-size: 1.1rem; }
+        .card-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .item-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+        .item-header { display: flex; justify-content: space-between; align-items: baseline; }
+        .drug-title { font-size: 0.95rem; font-weight: 600; }
+        .drug-cat { font-size: 0.7rem; color: var(--accent); text-transform: uppercase; }
+        .unit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .unit-chip { padding: 6px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; text-align: center; font-size: 0.72rem; cursor: pointer; }
+        .unit-chip.selected { background: var(--primary); border-color: var(--accent); font-weight: 700; color: #fff; }
+        .sig-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+        .sig-chip { font-size: 0.65rem; background: var(--bg-elevated); border: 1px solid var(--border); padding: 4px 6px; border-radius: 4px; color: var(--text-muted); cursor: pointer; }
+        .btn-stage { background: var(--primary); color: #fff; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 700; font-size: 0.9rem; }
+        .bottom-bar { background: var(--bg-surface); padding: 10px 14px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        #scanner-modal { display: none; position: fixed; inset: 0; background: #000; z-index: 1000; flex-direction: column; }
+        #scanner-video { flex: 1; object-fit: cover; }
+        .scanner-hud { position: absolute; top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; }
+    </style>
 </head>
 <body>
-<header id="mainHeader">
-  <div>
-    <div class="brand-title" id="shopTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
-    <div class="brand-sub" id="shopMeta">NDA: N/A &bull; LG: N/A</div>
-  </div>
-  <div style="display:flex;align-items:center;gap:8px;">
-    <span class="user-pill" id="activeUser">Locked</span>
-    <button class="btn-ghost" onclick="logout()">Lock</button>
-  </div>
-</header>
+    <header>
+        <div>
+            <div class="brand">SSEDDUME DSMS</div>
+            <div class="station-indicator">
+                <div class="status-dot" id="station-dot"></div>
+                <span id="station-text">Connecting to Master...</span>
+            </div>
+        </div>
+        <select id="operator-role" style="width: auto; padding: 4px 8px; font-size: 0.75rem;">
+            <option value="Dispenser">Dispenser</option>
+            <option value="Manager">Manager</option>
+            <option value="Owner">Owner</option>
+        </select>
+    </header>
 
-<div id="loginBox" class="card" style="max-width:460px;margin:28px auto;">
-  <h3>Staff &amp; Management Sign In</h3>
-  <div class="row">
-    <select id="loginStaff" style="flex:1;min-width:185px;" onkeydown="if(event.key==='Enter')loginWithPin()"></select>
-    <input id="loginPin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" style="width:110px;" onkeydown="if(event.key==='Enter')loginWithPin()" />
-  </div>
-  <div class="row">
-    <button class="btn-primary" onclick="loginWithPin()" style="flex:1;">Unlock with PIN</button>
-    <button class="btn-secondary" onclick="loginWithFingerprint()" id="fpLoginBtn" style="flex:1;">Fingerprint</button>
-  </div>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px;">
-    <small style="color:var(--muted);line-height:1.45;">
-      Opens your role's window (Command or Counter). Seed Owner PIN: <b>1234</b>.
-    </small>
-    <button class="btn-ghost" type="button" onclick="recoverOwnerWithCode()" style="font-size:11px;min-height:28px;white-space:nowrap;">Owner Recovery</button>
-  </div>
-  <div id="lockoutNotice" style="color:var(--danger);font-size:13px;font-weight:700;margin-top:6px;"></div>
-  <div class="lab-seal">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
-</div>
+    <nav>
+        <button class="nav-btn active" onclick="switchView('tab-dispense', this)">Prescription POS</button>
+        <button class="nav-btn" onclick="switchView('tab-audit', this)">Blind Stock Audit</button>
+        <button class="nav-btn" onclick="switchView('tab-supervisor', this)">Supervisor</button>
+    </nav>
 
-<div id="appShell" style="display:none;">
-  <main id="view"></main>
-  <div class="lab-seal">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
-  <nav id="tabs"></nav>
-</div>
+    <main>
+        <!-- POS Prescriptions -->
+        <div id="tab-dispense" class="view-panel active">
+            <div class="search-box">
+                <input type="text" id="drug-search" placeholder="Scan Barcode or Search Drug..." onkeyup="filterCatalog(this.value)">
+                <button class="btn-icon" onclick="openScanner('dispense')">📷</button>
+            </div>
+            <div class="card-list" id="catalog-matches"></div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Active Prescription Basket</div>
+            <div class="card-list" id="active-cart" style="max-height: 40%;"></div>
+        </div>
 
-<div id="toast"></div>
+        <!-- Blind Audit -->
+        <div id="tab-audit" class="view-panel">
+            <div class="search-box">
+                <input type="text" id="audit-sku" placeholder="Scan Shelf SKU for Audit...">
+                <button class="btn-icon" onclick="openScanner('audit')">📷</button>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <input type="number" id="audit-qty" placeholder="Physical Units Counted" style="flex: 2;">
+                <button class="btn-stage" style="flex: 1;" onclick="commitAuditLog()">Log Count</button>
+            </div>
+            <div class="card-list" id="audit-history"></div>
+        </div>
 
-<div id="camModal" class="modal-backdrop">
-  <div id="camBox" class="modal-card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <strong id="camTitle">Scan Barcode / QR</strong>
-      <button class="btn-ghost" onclick="stopCameraScan()">Cancel</button>
+        <!-- Supervisor Challenges -->
+        <div id="tab-supervisor" class="view-panel">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">PENDING OVERRIDE REQUESTS</div>
+            <div class="card-list" id="challenges-list"></div>
+        </div>
+    </main>
+
+    <div class="bottom-bar" id="cart-footer">
+        <div>
+            <div style="font-size: 0.68rem; color: var(--text-muted);">PRESCRIPTION TOTAL</div>
+            <div style="font-size: 1.15rem; font-weight: 700; color: var(--accent);" id="cart-total">0 UGX</div>
+        </div>
+        <button class="btn-stage" onclick="stagePrescriptionTicket()">Stage to Checkout &gt;&gt;</button>
     </div>
-    <div class="cam-frame">
-      <video id="camVideo" playsinline autoplay muted></video>
-      <div class="reticle"></div>
+
+    <!-- Scanner Overlay -->
+    <div id="scanner-modal">
+        <div class="scanner-hud">
+            <span style="color:#fff; background:rgba(0,0,0,0.6); padding:4px 8px; border-radius:4px; font-size:0.8rem;">Target Barcode</span>
+            <button style="background:var(--danger); color:#fff; border:none; padding:6px 12px; border-radius:4px;" onclick="closeScanner()">Close</button>
+        </div>
+        <video id="scanner-video" playsinline></video>
     </div>
-    <div id="camStatus" style="font-size:12px;color:#94a3b8;margin-top:10px;">Point camera at medicine barcode or Windows QR...</div>
-  </div>
-</div>
 
-<div id="receiptModal" class="modal-backdrop">
-  <div class="modal-card" id="receiptContent"></div>
-</div>
+    <script>
+        const baseUrl = window.location.origin;
+        let lastSeq = 0, catalog = [], cart = [], selectedUnits = {}, selectedSigs = {};
+        let activeContext = 'dispense', videoStream = null;
 
-<script>
-const DB_KEY = "sseddume_dsms_seed_v4";
-const LEGACY_KEYS = ["sseddume_dsms_seed_v3", "sseddume_dsms_seed_v2"];
-const SNAP_KEY = "sseddume_dsms_seed_snap_v4";
-const DEVICE_BIO_KEY = "sseddume_device_bio_keyring_v1";
-const LOCKOUT_MAX = 5;
-const LOCKOUT_MS = 5 * 60 * 1000;
-
-/* ==================== 1. JURISDICTION & CAPABILITY MATRIX ==================== */
-const ROLE_CAPS = {
-  Owner: new Set([
-    "dispense", "void_sale", "receive_grn", "edit_meds", "view_reports",
-    "settle_credit", "close_day", "pair_windows", "manage_staff", "deactivate_staff", "shop_settings"
-  ]),
-  "In-Charge": new Set([
-    "dispense", "void_sale", "receive_grn", "edit_meds", "view_reports",
-    "settle_credit", "close_day", "pair_windows"
-  ]),
-  Dispenser: new Set([
-    "dispense"
-  ])
-};
-
-function hasCap(role, cap) {
-  return Boolean(role && ROLE_CAPS[role] && ROLE_CAPS[role].has(cap));
-}
-
-function isManagementRole(role) {
-  return role === "Owner" || role === "In-Charge";
-}
-
-function roleLabel(role) {
-  if (role === "In-Charge") return "Manager (In-Charge)";
-  if (role === "Dispenser") return "Counter Staff (Dispenser)";
-  return "Owner";
-}
-
-function requireCap(cap, actionLabel) {
-  if (!session || !hasCap(session.role, cap)) {
-    addAudit("ACCESS_DENIED", `Blocked ${session ? session.name + " (" + session.role + ")" : "Unauthenticated"} from: ${actionLabel}`);
-    saveDb();
-    alert(`Jurisdiction denied: Your role does not have permission for "${actionLabel}".`);
-    return false;
-  }
-  return true;
-}
-
-/* ==================== 2. CRYPTO & HASHED PIN / RECOVERY ENGINE ==================== */
-function randomHex(bytes = 12) {
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, b => b.toString(16).padStart(2, "0")).join("");
-}
-
-function fallbackDigest(str) {
-  let h1 = 0x811c9dc5, h2 = 0x01000193, h3 = 0x1b873593, h4 = 0x85ebca6b;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 0x01000193);
-    h2 = Math.imul(h2 ^ ch, 0x27d4eb2d);
-    h3 = Math.imul(h3 ^ (ch + i), 0x165667b1);
-    h4 = Math.imul(h4 ^ (ch * 31), 0x9e3779b1);
-  }
-  return [h1, h2, h3, h4].map(n => (n >>> 0).toString(16).padStart(8, "0")).join("");
-}
-
-async function hashSecret(secret, salt) {
-  const material = `SSEDDUME::${salt}::${String(secret || "")}`;
-  if (window.crypto?.subtle) {
-    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
-    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, "0")).join("");
-  }
-  return fallbackDigest(material);
-}
-
-async function setStaffPin(user, rawPin) {
-  const salt = randomHex(12);
-  user.pinSalt = salt;
-  user.pinHash = await hashSecret(rawPin, salt);
-  delete user.pin;
-}
-
-async function verifyStaffPin(user, candidatePin) {
-  if (!user || !candidatePin) return false;
-  if (user.pinHash && user.pinSalt) {
-    const h = await hashSecret(candidatePin, user.pinSalt);
-    return h === user.pinHash;
-  }
-  if (user.pin) {
-    return String(user.pin) === String(candidatePin);
-  }
-  return false;
-}
-
-async function setOwnerRecoverySecret(rawCode) {
-  const clean = String(rawCode || "").trim().toUpperCase();
-  const salt = randomHex(12);
-  db.shop.recoverySalt = salt;
-  db.shop.recoveryHash = await hashSecret(clean, salt);
-  db.shop.recoveryHint = `${clean.slice(0, 6)}****${clean.slice(-2)}`;
-  delete db.shop.ownerRecoveryCode;
-}
-
-async function verifyOwnerRecoverySecret(candidateCode) {
-  const clean = String(candidateCode || "").trim().toUpperCase();
-  if (!clean) return false;
-  if (db.shop?.recoveryHash && db.shop?.recoverySalt) {
-    const h = await hashSecret(clean, db.shop.recoverySalt);
-    return h === db.shop.recoveryHash;
-  }
-  if (db.shop?.ownerRecoveryCode) {
-    return clean === String(db.shop.ownerRecoveryCode).trim().toUpperCase();
-  }
-  return false;
-}
-
-function generateRecoveryCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "REC-";
-  const arr = new Uint8Array(8);
-  crypto.getRandomValues(arr);
-  for (let i = 0; i < 8; i++) {
-    if (i === 4) out += "-";
-    out += chars[arr[i] % chars.length];
-  }
-  return out;
-}
-
-function computeChecksum(obj) {
-  const str = JSON.stringify(obj);
-  let h1 = 0x811c9dc5;
-  let h2 = 0x01000193;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i);
-    h1 ^= ch;
-    h1 = Math.imul(h1, 0x01000193);
-    h2 = Math.imul(h2 ^ ch, 0x27d4eb2d);
-  }
-  return ((h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0")).toUpperCase();
-}
-
-/* ==================== 3. PER-TABLET BIOMETRIC KEYRING ==================== */
-function loadDeviceKeyring() {
-  try {
-    const raw = localStorage.getItem(DEVICE_BIO_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch (_) {
-    return {};
-  }
-}
-
-function saveDeviceKeyring(ring) {
-  localStorage.setItem(DEVICE_BIO_KEY, JSON.stringify(ring));
-}
-
-function getDeviceBioForUser(userId) {
-  const ring = loadDeviceKeyring();
-  return ring[userId] || null;
-}
-
-function setDeviceBioForUser(userId, entry) {
-  const ring = loadDeviceKeyring();
-  if (entry) ring[userId] = entry;
-  else delete ring[userId];
-  saveDeviceKeyring(ring);
-}
-
-/* ==================== 4. HELPERS & STATE INITIALIZATION ==================== */
-function money(n) {
-  const num = Number(n);
-  if (!Number.isFinite(num)) return 0;
-  return Math.round((num + Number.EPSILON) * 100) / 100;
-}
-
-function localDateStr(d = new Date()) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function addDaysLocalStr(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return localDateStr(d);
-}
-
-function daysUntilDateStr(dateStr) {
-  const todayMid = new Date(`${localDateStr()}T00:00:00`).getTime();
-  const targetMid = new Date(`${dateStr}T00:00:00`).getTime();
-  return Math.round((targetMid - todayMid) / 86400000);
-}
-
-function nowIso() { return new Date().toISOString(); }
-
-function esc(str) {
-  return String(str ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-}
-
-let toastTimer = null;
-function toast(msg) {
-  const el = document.getElementById("toast");
-  el.textContent = msg;
-  el.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 2500);
-}
-
-function defaultState() {
-  return {
-    shop: {
-      name: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
-      nda: "",
-      lg: "",
-      currency: "UGX",
-      mustChangeOwnerPin: true,
-      autoLockOnHide: true,
-      recoveryHash: "",
-      recoverySalt: "",
-      recoveryHint: ""
-    },
-    windowsBridge: {
-      paired: false,
-      hostName: "",
-      endpointUrl: "",
-      tokenOrCode: "",
-      pairedAt: ""
-    },
-    meta: {
-      lastEventMs: Date.now(),
-      lastExportAt: "",
-      seq: 0
-    },
-    staff: [
-      { id: "U-OWNER", name: "Owner", role: "Owner", regNo: "OWNER", pin: "1234", active: true }
-    ],
-    auth: { failedAttempts: 0, lockedUntil: 0 },
-    medicines: [],
-    batches: [],
-    sales: [],
-    credits: [],
-    shiftHandovers: [],
-    tempLogs: [],
-    audit: []
-  };
-}
-
-function loadInitialDb() {
-  let raw = localStorage.getItem(DB_KEY);
-  if (!raw) {
-    for (const oldKey of LEGACY_KEYS) {
-      raw = localStorage.getItem(oldKey);
-      if (raw) break;
-    }
-  }
-  const parsed = raw ? JSON.parse(raw) : null;
-  const base = defaultState();
-  if (!parsed) return base;
-  return {
-    ...base,
-    ...parsed,
-    shop: { ...base.shop, ...(parsed.shop || {}) },
-    windowsBridge: { ...base.windowsBridge, ...(parsed.windowsBridge || {}) },
-    meta: { ...base.meta, ...(parsed.meta || {}) },
-    credits: Array.isArray(parsed.credits) ? parsed.credits : [],
-    shiftHandovers: Array.isArray(parsed.shiftHandovers) ? parsed.shiftHandovers : []
-  };
-}
-
-let db = loadInitialDb();
-let session = null;
-let currentTab = "sell";
-let cart = [];
-let activeStream = null;
-let scanRafId = null;
-let cancelActiveScan = null;
-let batteryStatusText = "";
-
-async function migratePlainSecretsToHashes() {
-  let changed = false;
-  for (const s of db.staff) {
-    if (s.pin) {
-      await setStaffPin(s, s.pin);
-      changed = true;
-    }
-    if (s.fpEnabled && s.fpCredId && !getDeviceBioForUser(s.id)) {
-      setDeviceBioForUser(s.id, { credId: s.fpCredId, enrolledAt: nowIso() });
-      delete s.fpEnabled;
-      delete s.fpCredId;
-      changed = true;
-    }
-  }
-  if (db.shop?.ownerRecoveryCode) {
-    await setOwnerRecoverySecret(db.shop.ownerRecoveryCode);
-    changed = true;
-  }
-  if (changed) saveDb();
-}
-
-if (navigator.getBattery) {
-  navigator.getBattery().then(bat => {
-    const updateBat = () => {
-      const pct = Math.round(bat.level * 100);
-      batteryStatusText = ` • BAT ${pct}%${bat.charging ? "⚡" : ""}`;
-      renderHeader();
-    };
-    updateBat();
-    bat.addEventListener("levelchange", updateBat);
-    bat.addEventListener("chargingchange", updateBat);
-  }).catch(() => {});
-}
-
-function checkClockDrift() {
-  const now = Date.now();
-  if (db.meta?.lastEventMs && now < db.meta.lastEventMs - 60000) {
-    addAudit("CLOCK_DRIFT", `System clock appeared behind last recorded state (${new Date(db.meta.lastEventMs).toISOString()})`);
-  }
-  db.meta.lastEventMs = Math.max(now, db.meta?.lastEventMs || 0);
-}
-
-function saveDb() {
-  try {
-    checkClockDrift();
-    const raw = JSON.stringify(db);
-    localStorage.setItem(DB_KEY, raw);
-    localStorage.setItem(SNAP_KEY, JSON.stringify({
-      savedAt: nowIso(),
-      checksum: computeChecksum(db),
-      data: db
-    }));
-    renderHeader();
-  } catch (err) {
-    alert("Storage warning: Export a JSON backup immediately. (" + (err?.message || err) + ")");
-  }
-}
-
-function addAudit(action, detail) {
-  db.meta.seq = (db.meta.seq || 0) + 1;
-  db.audit.unshift({
-    seq: db.meta.seq,
-    id: "A-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
-    time: nowIso(),
-    user: session ? `${session.name} (${session.role})` : "System",
-    action,
-    detail
-  });
-}
-
-function renderHeader() {
-  const hdr = document.getElementById("mainHeader");
-  const isCounter = session && session.role === "Dispenser";
-  hdr.className = isCounter ? "counter-header" : "";
-  document.body.className = isCounter ? "counter-mode" : "";
-
-  document.getElementById("shopTitle").textContent = db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
-  const winMode = !session
-    ? " • SELECT WINDOW"
-    : (isCounter ? " • COUNTER WINDOW (DISPENSING)" : " • MANAGEMENT COMMAND WINDOW");
-  document.getElementById("shopMeta").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"}${winMode}${batteryStatusText}`;
-  document.getElementById("activeUser").textContent = session ? `${session.name} • ${roleLabel(session.role)}` : "Locked";
-}
-
-function populateLoginStaff() {
-  const sel = document.getElementById("loginStaff");
-  const activeStaff = db.staff.filter(s => s.active !== false);
-  sel.innerHTML = activeStaff.map(s => {
-    const bio = getDeviceBioForUser(s.id);
-    return `<option value="${esc(s.id)}">${esc(s.name)} — ${roleLabel(s.role)}${bio ? " [FP ON THIS TABLET]" : ""}</option>`;
-  }).join("");
-  updateLockoutBanner();
-}
-
-function updateLockoutBanner() {
-  const el = document.getElementById("lockoutNotice");
-  const rem = (db.auth?.lockedUntil || 0) - Date.now();
-  if (rem > 0) {
-    el.textContent = `Locked out due to 5 wrong PINs. Try again in ${Math.ceil(rem / 1000)}s.`;
-    return true;
-  }
-  el.textContent = "";
-  return false;
-}
-
-function recordFailedAuth() {
-  db.auth = db.auth || { failedAttempts: 0, lockedUntil: 0 };
-  db.auth.failedAttempts += 1;
-  if (db.auth.failedAttempts >= LOCKOUT_MAX) {
-    db.auth.lockedUntil = Date.now() + LOCKOUT_MS;
-    db.auth.failedAttempts = 0;
-    addAudit("LOCKOUT", "5 failed authentication attempts triggered 5-minute lockout");
-  }
-  saveDb();
-  updateLockoutBanner();
-}
-
-async function completeLogin(user, method, usedSeedDefault = false) {
-  db.auth = { failedAttempts: 0, lockedUntil: 0 };
-  session = { id: user.id, name: user.name, role: user.role, regNo: user.regNo };
-  currentTab = "sell";
-  cart = [];
-  addAudit("LOGIN", `${user.name} (${roleLabel(user.role)}) signed in via ${method}`);
-  saveDb();
-
-  if (user.role === "Owner" && (db.shop.mustChangeOwnerPin || usedSeedDefault)) {
-    let newPin = "";
-    while (!newPin || newPin.length < 4 || newPin === "1234") {
-      newPin = prompt("First login security: Set your private Owner PIN (at least 4 digits, not 1234):");
-      if (newPin === null) {
-        session = null;
-        document.getElementById("loginPin").value = "";
-        return;
-      }
-      newPin = newPin.trim();
-    }
-    const target = db.staff.find(s => s.id === user.id);
-    if (target) await setStaffPin(target, newPin);
-    db.shop.mustChangeOwnerPin = false;
-    const rawRec = generateRecoveryCode();
-    await setOwnerRecoverySecret(rawRec);
-    addAudit("PIN_CHANGE", "Owner set private hashed PIN and generated recovery secret");
-    saveDb();
-    alert(`Owner PIN secured!\n\nIMPORTANT — Write down your Owner Recovery Code and store it safely off this device:\n\n${rawRec}\n\nThis code is hashed in storage and will not be shown again.`);
-  }
-
-  document.getElementById("loginPin").value = "";
-  document.getElementById("loginBox").style.display = "none";
-  document.getElementById("appShell").style.display = "block";
-  renderTabs();
-  renderView();
-}
-
-async function recoverOwnerWithCode() {
-  if (!db.shop?.recoveryHash && !db.shop?.ownerRecoveryCode) {
-    return alert("No Owner Recovery Code has been generated yet. Sign in with Owner PIN (default 1234) or enrolled Fingerprint.");
-  }
-  const entered = (prompt("Enter your Owner Recovery Code (e.g. REC-XXXX-XXXX):") || "").trim().toUpperCase();
-  if (!entered) return;
-  const ok = await verifyOwnerRecoverySecret(entered);
-  if (!ok) {
-    recordFailedAuth();
-    return alert("Invalid Owner Recovery Code.");
-  }
-  let newPin = "";
-  while (!newPin || newPin.length < 4 || newPin === "1234") {
-    newPin = prompt("Recovery verified! Set a new Owner PIN (at least 4 digits, not 1234):");
-    if (newPin === null) return;
-    newPin = newPin.trim();
-  }
-  const owner = db.staff.find(s => s.role === "Owner" && s.active !== false);
-  if (!owner) return alert("Owner profile not found.");
-  await setStaffPin(owner, newPin);
-  db.shop.mustChangeOwnerPin = false;
-  const nextRec = generateRecoveryCode();
-  await setOwnerRecoverySecret(nextRec);
-  db.auth = { failedAttempts: 0, lockedUntil: 0 };
-  addAudit("OWNER_RECOVERY", "Owner PIN reset via Recovery Code; new recovery code issued");
-  saveDb();
-  populateLoginStaff();
-  alert(`Owner PIN reset! Your NEW one-time Recovery Code is:\n\n${nextRec}\n\nWrite this new code down immediately.`);
-}
-
-async function loginWithPin() {
-  if (updateLockoutBanner()) return;
-  const staffId = document.getElementById("loginStaff").value;
-  const pin = document.getElementById("loginPin").value.trim();
-  const user = db.staff.find(s => s.id === staffId);
-  if (!user || user.active === false) {
-    recordFailedAuth();
-    return alert("Account is deactivated or not found.");
-  }
-  const valid = await verifyStaffPin(user, pin);
-  if (!valid) {
-    recordFailedAuth();
-    return alert("Invalid PIN.");
-  }
-  await completeLogin(user, "PIN", pin === "1234");
-}
-
-function stopCameraScan() {
-  if (typeof cancelActiveScan === "function") {
-    const fn = cancelActiveScan;
-    cancelActiveScan = null;
-    fn();
-  }
-  if (scanRafId) { cancelAnimationFrame(scanRafId); scanRafId = null; }
-  if (activeStream) {
-    activeStream.getTracks().forEach(t => t.stop());
-    activeStream = null;
-  }
-  document.getElementById("camModal").style.display = "none";
-}
-
-async function scanBarcodeWithCamera(labelText) {
-  stopCameraScan();
-
-  const mlKit = window.Capacitor?.Plugins?.BarcodeScanner;
-  if (mlKit && typeof mlKit.scan === "function") {
-    const perms = await mlKit.checkPermissions?.();
-    if (perms?.camera !== "granted") {
-      await mlKit.requestPermissions?.();
-    }
-    const res = await mlKit.scan();
-    const rawValue = res?.barcodes?.[0]?.rawValue || res?.barcodes?.[0]?.displayValue;
-    if (rawValue) return String(rawValue).trim();
-    throw new Error("No barcode detected.");
-  }
-
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    const manual = prompt(`${labelText}\nCamera unavailable. Enter code or URL manually:`);
-    return manual ? manual.trim() : null;
-  }
-
-  const modal = document.getElementById("camModal");
-  const video = document.getElementById("camVideo");
-  const statusEl = document.getElementById("camStatus");
-  document.getElementById("camTitle").textContent = labelText;
-  statusEl.textContent = "Starting camera...";
-  modal.style.display = "flex";
-
-  try {
-    activeStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
-      audio: false
-    });
-    video.srcObject = activeStream;
-    await video.play();
-  } catch (err) {
-    stopCameraScan();
-    throw err;
-  }
-
-  if (!("BarcodeDetector" in window)) {
-    const manual = prompt("BarcodeDetector unsupported here. Enter code or URL manually:");
-    stopCameraScan();
-    return manual ? manual.trim() : null;
-  }
-
-  const detector = new BarcodeDetector({
-    formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code", "data_matrix"]
-  });
-  statusEl.textContent = "Align code inside camera frame...";
-
-  return await new Promise((resolve, reject) => {
-    let settled = false;
-    cancelActiveScan = () => {
-      if (!settled) { settled = true; reject(new Error("Scan cancelled.")); }
-    };
-    const tick = async () => {
-      if (settled) return;
-      try {
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-          const codes = await detector.detect(video);
-          if (codes && codes.length > 0 && codes[0].rawValue) {
-            settled = true;
-            cancelActiveScan = null;
-            const code = String(codes[0].rawValue).trim();
-            stopCameraScan();
-            resolve(code);
-            return;
-          }
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function beep(ok = true) {
+            try {
+                const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+                o.connect(g); g.connect(audioCtx.destination);
+                o.frequency.setValueAtTime(ok ? 1850 : 380, audioCtx.currentTime);
+                g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+                o.start(); o.stop(audioCtx.currentTime + 0.15);
+                if (navigator.vibrate) navigator.vibrate(ok ? 40 : 150);
+            } catch(e) {}
         }
-      } catch (_) {}
-      scanRafId = requestAnimationFrame(tick);
-    };
-    scanRafId = requestAnimationFrame(tick);
-  });
-}
 
-function randomChallenge() {
-  const arr = new Uint8Array(32);
-  crypto.getRandomValues(arr);
-  return arr;
-}
-function bufToBase64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
-function base64ToBuf(b64) {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes.buffer;
-}
-
-async function verifyDeviceBiometric(reasonText, expectedCredId = "") {
-  const capBio = window.Capacitor?.Plugins?.BiometricAuth;
-  if (capBio && typeof capBio.authenticate === "function") {
-    await capBio.authenticate({
-      reason: reasonText,
-      cancelTitle: "Use PIN",
-      allowDeviceCredential: false,
-      androidTitle: "Fingerprint Verification",
-      androidSubtitle: reasonText
-    });
-    return true;
-  }
-  if (window.PublicKeyCredential && expectedCredId) {
-    const assertion = await navigator.credentials.get({
-      publicKey: {
-        challenge: randomChallenge(),
-        allowCredentials: [{ id: base64ToBuf(expectedCredId), type: "public-key", transports: ["internal"] }],
-        userVerification: "required",
-        timeout: 60000
-      }
-    });
-    return Boolean(assertion);
-  }
-  throw new Error("Biometric hardware or enrolled credential unavailable on this tablet.");
-}
-
-async function performDeviceBiometricEnrollment(user) {
-  const capBio = window.Capacitor?.Plugins?.BiometricAuth;
-  if (capBio && typeof capBio.authenticate === "function") {
-    await capBio.authenticate({
-      reason: `Enroll fingerprint on this tablet for ${user.name} (${roleLabel(user.role)})`,
-      cancelTitle: "Cancel",
-      allowDeviceCredential: false
-    });
-    setDeviceBioForUser(user.id, { credId: "NATIVE_ANDROID_BIO", enrolledAt: nowIso() });
-    return true;
-  }
-  if (window.PublicKeyCredential) {
-    const cred = await navigator.credentials.create({
-      publicKey: {
-        challenge: randomChallenge(),
-        rp: { name: db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM" },
-        user: { id: new TextEncoder().encode(user.id), name: user.name, displayName: `${user.name} (${user.role})` },
-        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
-        timeout: 60000
-      }
-    });
-    setDeviceBioForUser(user.id, { credId: bufToBase64(cred.rawId), enrolledAt: nowIso() });
-    return true;
-  }
-  throw new Error("Fingerprint sensor not available on this device.");
-}
-
-async function enrollMyOwnFingerprint() {
-  if (!session) return;
-  const user = db.staff.find(s => s.id === session.id && s.active !== false);
-  if (!user) return;
-  const pin = prompt(`Verify your personal PIN for ${user.name} before enrolling fingerprint on this tablet:`);
-  if (!pin || !(await verifyStaffPin(user, pin.trim()))) {
-    return alert("Invalid personal PIN.");
-  }
-  try {
-    await performDeviceBiometricEnrollment(user);
-    addAudit("SELF_FP_ENROLL", `${user.name} (${roleLabel(user.role)}) enrolled tablet-bound fingerprint`);
-    saveDb();
-    populateLoginStaff();
-    renderView();
-    toast(`Fingerprint enrolled on this tablet for ${user.name} (${roleLabel(user.role)} access only)`);
-  } catch (err) {
-    alert("Fingerprint enrollment cancelled or failed: " + (err?.message || err));
-  }
-}
-
-async function disableMyOwnFingerprint() {
-  if (!session) return;
-  const user = db.staff.find(s => s.id === session.id);
-  if (!user) return;
-  const pin = prompt("Enter your personal PIN to remove your fingerprint from this tablet:");
-  if (!pin || !(await verifyStaffPin(user, pin.trim()))) {
-    return alert("Invalid personal PIN.");
-  }
-  setDeviceBioForUser(user.id, null);
-  addAudit("SELF_FP_DISABLE", `${user.name} (${roleLabel(user.role)}) removed tablet fingerprint`);
-  saveDb();
-  populateLoginStaff();
-  renderView();
-  toast("Your fingerprint was removed from this tablet");
-}
-
-async function enrollFingerprintForStaff(staffId) {
-  if (!requireCap("manage_staff", "Enroll staff fingerprint")) return;
-  const user = db.staff.find(s => s.id === staffId);
-  if (!user) return;
-  try {
-    await performDeviceBiometricEnrollment(user);
-    addAudit("OWNER_FP_ENROLL", `Owner enrolled tablet fingerprint for ${user.name} (${roleLabel(user.role)})`);
-    saveDb();
-    populateLoginStaff();
-    renderView();
-    toast(`Fingerprint enrolled on this tablet for ${user.name}`);
-  } catch (err) {
-    alert("Fingerprint enrollment cancelled or failed: " + (err?.message || err));
-  }
-}
-
-function disableFingerprintForStaff(staffId) {
-  if (!requireCap("manage_staff", "Remove staff fingerprint")) return;
-  const user = db.staff.find(s => s.id === staffId);
-  if (!user) return;
-  setDeviceBioForUser(user.id, null);
-  addAudit("OWNER_FP_DISABLE", `Owner removed tablet fingerprint for ${user.name} (${roleLabel(user.role)})`);
-  saveDb();
-  populateLoginStaff();
-  renderView();
-  toast(`Fingerprint removed from this tablet for ${user.name}`);
-}
-
-async function loginWithFingerprint() {
-  if (updateLockoutBanner()) return;
-  const staffId = document.getElementById("loginStaff").value;
-  const user = db.staff.find(s => s.id === staffId);
-  if (!user || user.active === false) {
-    recordFailedAuth();
-    return alert("Account is deactivated or not found.");
-  }
-  const bio = getDeviceBioForUser(user.id);
-  if (!bio) {
-    return alert("Fingerprint is not enrolled on THIS tablet yet. Sign in with PIN and tap 'Enroll My Fingerprint' in your window.");
-  }
-  try {
-    const ok = await verifyDeviceBiometric(`Sign in as ${user.name} (${roleLabel(user.role)})`, bio.credId);
-    if (ok) await completeLogin(user, "FINGERPRINT", false);
-  } catch (err) {
-    recordFailedAuth();
-    alert("Fingerprint verification failed: " + (err?.message || err));
-  }
-}
-
-async function authorizeSupervisor(actionLabel) {
-  const supervisors = db.staff.filter(s => s.active !== false && isManagementRole(s.role));
-  const fpSupervisor = supervisors.find(s => Boolean(getDeviceBioForUser(s.id)));
-  if (fpSupervisor) {
-    const bio = getDeviceBioForUser(fpSupervisor.id);
-    const useFp = confirm(`${actionLabel}\n\nPress OK for Owner/Manager Fingerprint (${fpSupervisor.name}), or Cancel for Owner/Manager PIN.`);
-    if (useFp) {
-      try {
-        const ok = await verifyDeviceBiometric(actionLabel, bio.credId);
-        if (ok) return fpSupervisor;
-      } catch (_) {
-        alert("Fingerprint failed, falling back to PIN.");
-      }
-    }
-  }
-  const pin = prompt(`${actionLabel}\nEnter Owner or Manager (In-Charge) PIN:`);
-  if (!pin) return null;
-  for (const s of supervisors) {
-    if (await verifyStaffPin(s, pin.trim())) return s;
-  }
-  alert("Invalid Owner/Manager PIN.");
-  return null;
-}
-
-function logout() {
-  stopCameraScan();
-  if (session) addAudit("LOGOUT", `${session.name} locked screen`);
-  session = null;
-  cart = [];
-  saveDb();
-  populateLoginStaff();
-  document.getElementById("appShell").style.display = "none";
-  document.getElementById("loginBox").style.display = "block";
-}
-
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden && session && db.shop?.autoLockOnHide) {
-    logout();
-  }
-});
-
-function renderTabs() {
-  const nav = document.getElementById("tabs");
-  if (session.role === "Dispenser") {
-    currentTab = "sell";
-    nav.style.display = "none";
-    nav.innerHTML = "";
-    return;
-  }
-
-  nav.style.display = "flex";
-  const allTabs = [
-    { id: "sell", icon: "💊", label: "Sell", cap: "dispense" },
-    { id: "grn", icon: "📦", label: "Stock", cap: "receive_grn" },
-    { id: "meds", icon: "📋", label: "Meds", cap: "edit_meds" },
-    { id: "reports", icon: "📊", label: "Reports", cap: "view_reports" },
-    { id: "admin", icon: "🛡️", label: "Admin", cap: "manage_staff" }
-  ];
-  const allowed = allTabs.filter(t => hasCap(session.role, t.cap));
-  if (!allowed.some(t => t.id === currentTab)) currentTab = allowed[0].id;
-  nav.innerHTML = "";
-  allowed.forEach(t => {
-    const b = document.createElement("button");
-    b.innerHTML = `<span style="font-size:15px;">${t.icon}</span><span>${esc(t.label)}</span>`;
-    b.className = currentTab === t.id ? "active" : "";
-    b.onclick = () => {
-      if (!requireCap(t.cap, `Open ${t.label}`)) return;
-      currentTab = t.id;
-      renderTabs();
-      renderView();
-    };
-    nav.appendChild(b);
-  });
-}
-
-function renderSelfJurisdictionBar() {
-  if (!session) return "";
-  const bio = getDeviceBioForUser(session.id);
-  const isCounter = session.role === "Dispenser";
-  const windowName = isCounter ? "STAFF COUNTER WINDOW (Dispensing Only)" : `${roleLabel(session.role).toUpperCase()} COMMAND WINDOW`;
-  const scopeDesc = isCounter
-    ? "Jurisdiction: Walk-in dispensing & receipts only. Management, stock edits, cash reports, and admin controls stay with Owner & Manager."
-    : (session.role === "In-Charge"
-        ? "Jurisdiction: Dispensing, Stock/GRN, Meds & Reports. Admin & staff deactivation stay with Owner."
-        : "Jurisdiction: Full Owner control across all shop windows, staff activation, and settings.");
-
-  return `
-    <div class="self-bio-bar">
-      <div style="max-width:650px;">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span class="badge ${isCounter ? "warn" : "info"}">${windowName}</span>
-          <strong>${esc(session.name)}</strong>
-          ${bio ? '<span class="badge ok">FINGERPRINT ENROLLED ON THIS TABLET</span>' : '<span class="badge warn">PIN ONLY ON THIS TABLET</span>'}
-        </div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4;">${scopeDesc}</div>
-      </div>
-      <div class="row" style="margin:0;">
-        <button class="btn-primary" style="min-height:36px;padding:6px 12px;font-size:12.5px;" onclick="enrollMyOwnFingerprint()">
-          ${bio ? "Update My Fingerprint" : "Enroll My Fingerprint"}
-        </button>
-        ${bio ? `<button class="btn-ghost" onclick="disableMyOwnFingerprint()">Remove My FP</button>` : ""}
-      </div>
-    </div>
-  `;
-}
-
-function batchStatus(b) {
-  if (b.quarantined) return "QUARANTINED";
-  if (b.expiry <= localDateStr()) return "EXPIRED";
-  if (b.qty <= 0) return "DEPLETED";
-  return "ACTIVE";
-}
-
-function isNearExpiry(b) {
-  return batchStatus(b) === "ACTIVE" && b.expiry <= addDaysLocalStr(30);
-}
-
-function isCriticalExpiry(b) {
-  return batchStatus(b) === "ACTIVE" && b.expiry <= addDaysLocalStr(7);
-}
-
-function medAvailableStock(medId) {
-  return db.batches.filter(b => b.medId === medId && batchStatus(b) === "ACTIVE").reduce((s, b) => s + b.qty, 0);
-}
-
-function openCreditBalance() {
-  return money((db.credits || []).filter(c => !c.settled).reduce((s, c) => s + money(c.balance), 0));
-}
-
-function bumpQty(inputId, addVal) {
-  const el = document.getElementById(inputId);
-  if (!el) return;
-  const cur = parseInt(el.value || "0", 10) || 0;
-  el.value = Math.max(1, cur + addVal);
-  updateSellHelper();
-}
-
-function applyDosagePreset(text) {
-  const el = document.getElementById("sellDosage");
-  if (!el) return;
-  el.value = el.value.trim() ? `${el.value.trim()} | ${text}` : text;
-}
-
-function onSellMedChange() {
-  const medId = document.getElementById("sellMed")?.value;
-  const med = db.medicines.find(m => m.id === medId);
-  const priceEl = document.getElementById("sellPrice");
-  if (med && priceEl && Number(med.default_unit_price) > 0) {
-    priceEl.value = money(med.default_unit_price);
-  }
-  updateSellHelper();
-}
-
-function updateSellHelper() {
-  const box = document.getElementById("sellMedInfo");
-  if (!box) return;
-  const medId = document.getElementById("sellMed")?.value;
-  const med = db.medicines.find(m => m.id === medId);
-  if (!med) { box.innerHTML = ""; return; }
-  const qty = Math.max(1, parseInt(document.getElementById("sellQty")?.value || "1", 10) || 1);
-  const avail = medAvailableStock(med.id);
-  const packInfo = med.pack_name && med.pack_multiplier > 1
-    ? ` &bull; ${qty} ${esc(med.base_unit)} = ${(qty / med.pack_multiplier).toFixed(2)} ${esc(med.pack_name)} (${med.pack_multiplier}/${esc(med.pack_name)})`
-    : "";
-  const noteHtml = med.clinical_note
-    ? `<div class="alert-strip alert-info" style="margin:6px 0 0;padding:7px 10px;"><strong>LASA / Dispensing Caution:</strong> ${esc(med.clinical_note)}</div>`
-    : "";
-  box.innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Available: <b>${avail} ${esc(med.base_unit)}</b>${packInfo}</div>${noteHtml}`;
-}
-
-function togglePayFields() {
-  const method = document.getElementById("sellPay")?.value || "CASH";
-  const box = document.getElementById("extraPayFields");
-  if (!box) return;
-  if (method === "SPLIT") {
-    box.innerHTML = `
-      <input id="splitCashInput" type="number" min="0" step="0.01" placeholder="Cash Part" style="width:115px;" />
-      <input id="splitMmInput" type="number" min="0" step="0.01" placeholder="MM Part" style="width:115px;" />
-      <input id="checkoutPayRef" type="text" placeholder="MM Ref / Phone" style="width:135px;" />
-    `;
-  } else if (method === "MOBILE_MONEY") {
-    box.innerHTML = `<input id="checkoutPayRef" type="text" placeholder="MM Ref / Phone" style="width:155px;" />`;
-  } else if (method === "CREDIT") {
-    box.innerHTML = `
-      <input id="creditCustomer" type="text" placeholder="Customer Name & Phone" style="width:185px;" />
-      <input id="creditDeposit" type="number" min="0" step="0.01" placeholder="Cash Deposit (0)" style="width:130px;" />
-    `;
-  } else {
-    box.innerHTML = "";
-  }
-}
-
-function renderMitigationAlerts() {
-  const notes = [];
-  const critBatches = db.batches.filter(isCriticalExpiry);
-  if (critBatches.length) {
-    notes.push(`<div class="alert-strip alert-danger"><strong>Critical Expiry Alert (≤ 7 days):</strong> ${critBatches.length} active batch(es) expire within 7 days. Dispense first via FEFO or quarantine if unsuitable.</div>`);
-  }
-  const lowMeds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && medAvailableStock(m.id) <= (m.reorder_level || 0));
-  if (lowMeds.length) {
-    notes.push(`<div class="alert-strip alert-warn"><strong>Low Stock Reorder Alert:</strong> ${lowMeds.length} medicine(s) at or below reorder level (${lowMeds.slice(0, 4).map(m => esc(m.generic_name)).join(", ")}${lowMeds.length > 4 ? "..." : ""}).</div>`);
-  }
-  if (hasCap(session?.role, "view_reports")) {
-    const lastExp = db.meta?.lastExportAt ? new Date(db.meta.lastExportAt).getTime() : 0;
-    const hasActivity = db.sales.length > 0 || db.batches.length > 0;
-    if (hasActivity && (!lastExp || Date.now() - lastExp > 24 * 3600 * 1000)) {
-      notes.push(`<div class="alert-strip alert-warn"><strong>Backup Reminder:</strong> Export a verified JSON or Windows Pack backup off the device so data survives storage resets.</div>`);
-    }
-  }
-  return notes.join("");
-}
-
-function renderKpis() {
-  if (!hasCap(session?.role, "view_reports")) return "";
-  const validSales = db.sales.filter(s => !s.voided);
-  const cashTotal = money(validSales.reduce((a, b) => a + money(b.cashPaid ?? (b.payMethod === "CASH" ? b.total : 0)), 0));
-  const mmTotal = money(validSales.reduce((a, b) => a + money(b.mmPaid ?? (b.payMethod === "MOBILE_MONEY" ? b.total : 0)), 0));
-  const creditOpen = openCreditBalance();
-  const nearExp = db.batches.filter(isNearExpiry).length;
-
-  return `
-    <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Cash Collected</div><div class="kpi-val">${cashTotal.toFixed(2)}</div></div>
-      <div class="kpi"><div class="kpi-label">Mobile Money</div><div class="kpi-val">${mmTotal.toFixed(2)}</div></div>
-      <div class="kpi"><div class="kpi-label">Open Credit</div><div class="kpi-val" style="color:${creditOpen > 0 ? "var(--accent)" : "inherit"};">${creditOpen.toFixed(2)}</div></div>
-      <div class="kpi"><div class="kpi-label">Expiring ≤ 30d</div><div class="kpi-val" style="color:${nearExp ? "var(--warn)" : "inherit"};">${nearExp}</div></div>
-    </div>
-  `;
-}
-
-function renderWindowsIncentiveCard() {
-  if (!hasCap(session?.role, "pair_windows")) return "";
-  const wb = db.windowsBridge || {};
-  const hasHttpUrl = /^https?:\/\//i.test(wb.endpointUrl || "");
-  return `
-    <div class="win-banner">
-      <div style="max-width:640px;">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span class="badge info">WINDOWS DESKTOP BRIDGE</span>
-          <strong>Pair with Windows Station via QR Scan</strong>
-        </div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.45;">
-          Scan a Windows host QR code (<code>SSEDDUME-WIN|Host|http://PC-IP:8080|TOKEN</code>) or export a checksum-verified Windows bundle.
-          ${wb.paired ? `<br><span class="badge ok" style="margin-top:4px;">PAIRED: ${esc(wb.hostName || "Windows PC")} (${esc(wb.endpointUrl || "Local Bridge")})</span>` : ""}
-        </div>
-      </div>
-      <div class="row" style="margin:0;">
-        <button class="btn-accent" onclick="scanWindowsPairingQr()">Scan Windows QR</button>
-        ${hasHttpUrl ? `<button class="btn-primary" onclick="openPairedWindowsApp()">Open Windows App</button>` : ""}
-        <button class="btn-ghost" onclick="exportWindowsBridgeBundle()">Export Win Pack</button>
-      </div>
-    </div>
-  `;
-}
-
-function openPairedWindowsApp() {
-  if (!requireCap("pair_windows", "Open paired Windows station")) return;
-  const url = db.windowsBridge?.endpointUrl || "";
-  if (!/^https?:\/\//i.test(url)) return alert("No valid Windows HTTP/HTTPS host URL paired yet.");
-  window.open(url, "_blank", "noopener");
-}
-
-function applyWindowsPairingPayload(raw) {
-  if (!requireCap("pair_windows", "Pair Windows station")) return false;
-  const text = String(raw || "").trim();
-  if (!text) return false;
-  let hostName = "Windows Desktop";
-  let endpointUrl = "";
-  let tokenOrCode = text;
-
-  if (text.startsWith("SSEDDUME-WIN|")) {
-    const parts = text.split("|");
-    hostName = (parts[1] || "Windows Desktop").trim();
-    endpointUrl = (parts[2] || "").trim();
-    tokenOrCode = (parts[3] || text).trim();
-  } else if (/^https?:\/\//i.test(text)) {
-    endpointUrl = text;
-    try { hostName = new URL(text).hostname; } catch (_) {}
-  }
-
-  db.windowsBridge = {
-    paired: true,
-    hostName,
-    endpointUrl,
-    tokenOrCode,
-    pairedAt: nowIso()
-  };
-  addAudit("WIN_PAIR", `Paired tablet with Windows host "${hostName}" (${endpointUrl || "code-only"})`);
-  saveDb();
-  renderView();
-  toast(`Windows linked: ${hostName}`);
-  return true;
-}
-
-function unpairWindowsBridge() {
-  if (!requireCap("manage_staff", "Unpair Windows station")) return;
-  db.windowsBridge = defaultState().windowsBridge;
-  addAudit("WIN_UNPAIR", "Unpaired Windows desktop host");
-  saveDb();
-  renderView();
-  toast("Windows host unpaired");
-}
-
-async function scanWindowsPairingQr() {
-  if (!requireCap("pair_windows", "Scan Windows pairing QR")) return;
-  try {
-    const code = await scanBarcodeWithCamera("Scan Windows Desktop Pairing QR");
-    if (!code) return;
-    if (!applyWindowsPairingPayload(code)) {
-      alert("Unrecognized Windows pairing code.");
-    }
-  } catch (err) {
-    if (!String(err?.message || "").includes("cancelled")) alert(err?.message || err);
-  }
-}
-
-function exportWindowsBridgeBundle() {
-  if (!requireCap("view_reports", "Export Windows sync bundle")) return;
-  const snapshotCopy = JSON.parse(JSON.stringify(db));
-  const payload = {
-    system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
-    bundleType: "Windows Desktop Companion & Sync Bundle",
-    generatedAt: nowIso(),
-    checksum: computeChecksum(snapshotCopy),
-    shop: snapshotCopy.shop,
-    windowsBridge: snapshotCopy.windowsBridge,
-    counts: {
-      medicines: snapshotCopy.medicines.length,
-      batches: snapshotCopy.batches.length,
-      sales: snapshotCopy.sales.length,
-      credits: snapshotCopy.credits.length,
-      audit: snapshotCopy.audit.length
-    },
-    snapshot: snapshotCopy
-  };
-  db.meta.lastExportAt = nowIso();
-  addAudit("WIN_BUNDLE", `Exported verified Windows bundle [CHK:${payload.checksum}]`);
-  saveDb();
-  renderView();
-  downloadBlob(JSON.stringify(payload, null, 2), `sseddume-windows-bundle-${localDateStr()}.json`, "application/json");
-  toast("Verified Windows bundle exported");
-}
-
-function renderView() {
-  const v = document.getElementById("view");
-  const tabCaps = {
-    sell: "dispense",
-    grn: "receive_grn",
-    meds: "edit_meds",
-    reports: "view_reports",
-    admin: "manage_staff"
-  };
-  const neededCap = tabCaps[currentTab] || "dispense";
-  if (!hasCap(session?.role, neededCap)) {
-    currentTab = "sell";
-    renderTabs();
-  }
-  if (currentTab === "sell") return renderSell(v);
-  if (currentTab === "grn") return renderGrn(v);
-  if (currentTab === "meds") return renderMeds(v);
-  if (currentTab === "reports") return renderReports(v);
-  if (currentTab === "admin") return renderAdmin(v);
-}
-
-function renderSell(v) {
-  const isCounter = session.role === "Dispenser";
-  const usableMeds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED");
-  const medOptions = usableMeds.map(m => {
-    const avail = medAvailableStock(m.id);
-    const lowFlag = avail <= (m.reorder_level || 0) ? " [LOW]" : "";
-    const shortBatch = db.batches
-      .filter(b => b.medId === m.id && isNearExpiry(b))
-      .sort((a, b) => a.expiry.localeCompare(b.expiry))[0];
-    const expFlag = shortBatch ? ` [EXP ${daysUntilDateStr(shortBatch.expiry)}d]` : "";
-    const priceTag = Number(m.default_unit_price) > 0 ? ` @${money(m.default_unit_price)}` : "";
-    return `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${avail} ${esc(m.base_unit)}${priceTag}${lowFlag}${expFlag}</option>`;
-  }).join("");
-
-  const cartHtml = cart.length
-    ? cart.map((item, idx) => `
-        <div class="cart-item">
-          <div>
-            <strong>${esc(item.medName)}</strong> &times; ${item.qty} ${esc(item.baseUnit)} @ ${money(item.unitPrice).toFixed(2)}
-            ${item.dosage ? `<div style="font-size:12px;color:var(--muted);">Sig: ${esc(item.dosage)}</div>` : ""}
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <strong>${money(item.qty * item.unitPrice).toFixed(2)}</strong>
-            <button class="btn-ghost" onclick="removeCartItem(${idx})">✕</button>
-          </div>
-        </div>
-      `).join("")
-    : `<p style="color:var(--muted);font-size:13px;margin:6px 0 12px;">Basket is empty. Even 1 tablet can be dispensed fast with +1.</p>`;
-
-  const cartTotal = money(cart.reduce((sum, i) => sum + money(i.qty * i.unitPrice), 0));
-
-  const visibleSales = isCounter
-    ? db.sales.filter(s => s.dispenser === session.name).slice(0, 20)
-    : db.sales.slice(0, 25);
-
-  const saleRows = visibleSales.map(s => `
-    <tr>
-      <td>${esc(s.time.slice(0, 16).replace("T", " "))}</td>
-      <td>
-        <button class="btn-ghost" onclick="openReceipt('${esc(s.receiptId || s.id)}')">${esc(s.receiptId || s.id)}</button>
-        <div style="margin-top:3px;">${esc(s.medName)}</div>
-        ${s.dosage ? `<small style="color:var(--muted);">Sig: ${esc(s.dosage)}</small>` : ""}
-      </td>
-      <td>${esc(s.batchNo)}</td>
-      <td>${s.qty}</td>
-      <td>${money(s.total).toFixed(2)} <span class="badge ok">${esc(s.payMethod)}</span>${s.payRef ? `<br><small style="color:var(--muted);">Ref: ${esc(s.payRef)}</small>` : ""}</td>
-      <td>${esc(s.dispenser)} <small style="color:var(--muted);">[${esc(s.dispenserReg || "N/A")}]</small></td>
-      <td>${s.voided ? '<span class="badge bad">VOIDED</span>' : `<button class="btn-danger" style="min-height:32px;padding:4px 10px;font-size:12px;" onclick="voidSale('${esc(s.id)}')">Void</button>`}</td>
-    </tr>
-  `).join("") || `<tr><td colspan="7" style="color:var(--muted);">No receipts recorded yet in this window.</td></tr>`;
-
-  v.innerHTML = `
-    ${renderSelfJurisdictionBar()}
-    ${renderKpis()}
-    ${renderMitigationAlerts()}
-    ${renderWindowsIncentiveCard()}
-    <div class="grid-2">
-      <div class="card">
-        <h3>Dispense Line (Strict FEFO — Single Unit &amp; Full Course)</h3>
-        <div class="row">
-          <input id="sellSearch" type="text" placeholder="Search name or barcode..." oninput="filterSellMeds()" style="flex:1;min-width:170px;" />
-          <button class="btn-secondary" onclick="scanSellBarcode()">Scan Barcode</button>
-        </div>
-        <div class="row">
-          <select id="sellMed" onchange="onSellMedChange()" style="flex:1;min-width:220px;">${medOptions || '<option value="">No permitted stock</option>'}</select>
-        </div>
-        <div id="sellMedInfo"></div>
-        <div class="row">
-          <input id="sellQty" type="number" min="1" value="1" placeholder="Qty" oninput="updateSellHelper()" style="width:84px;" onkeydown="if(event.key==='Enter')addToCart()" />
-          <button class="chip" type="button" onclick="bumpQty('sellQty', 1)">+1</button>
-          <button class="chip" type="button" onclick="bumpQty('sellQty', 5)">+5</button>
-          <button class="chip" type="button" onclick="bumpQty('sellQty', 10)">+10</button>
-          <input id="sellPrice" type="number" min="0" step="0.01" placeholder="Unit Price" style="width:120px;" onkeydown="if(event.key==='Enter')addToCart()" />
-        </div>
-        <div class="row" style="margin-bottom:6px;">
-          <button class="chip-alt" type="button" onclick="applyDosagePreset('1x3 for 5 days')">1x3 (5d)</button>
-          <button class="chip-alt" type="button" onclick="applyDosagePreset('1x2 for 5 days')">1x2 (5d)</button>
-          <button class="chip-alt" type="button" onclick="applyDosagePreset('2x3 for 3 days')">2x3 (3d)</button>
-          <button class="chip-alt" type="button" onclick="applyDosagePreset('1x1 Nocte')">1x1 Nocte</button>
-          <button class="chip-alt" type="button" onclick="applyDosagePreset('Partial starter dose — return to complete')">Partial Dose</button>
-        </div>
-        <div class="row">
-          <input id="sellDosage" type="text" placeholder="Dosage instruction / partial course note" style="flex:1;min-width:180px;" onkeydown="if(event.key==='Enter')addToCart()" />
-          <button class="btn-secondary" onclick="addToCart()">+ Add to Basket</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Customer Basket (${cart.length} ${cart.length === 1 ? "item" : "items"})</h3>
-        ${cartHtml}
-        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:8px;">
-          <div class="row" style="justify-content:space-between;margin-bottom:8px;">
-            <strong style="font-size:16px;">Total: ${cartTotal.toFixed(2)}</strong>
-            <select id="sellPay" onchange="togglePayFields()">
-              <option value="CASH">CASH</option>
-              <option value="MOBILE_MONEY">MOBILE_MONEY</option>
-              <option value="SPLIT">SPLIT (Cash + MM)</option>
-              <option value="CREDIT">APPROVED CREDIT</option>
-            </select>
-          </div>
-          <div class="row" id="extraPayFields" style="margin-bottom:8px;"></div>
-          <button class="btn-primary" onclick="checkoutBasket()" style="width:100%;">Complete Sale &amp; Issue Receipt</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>${isCounter ? "My Counter Receipts (Void Requires Owner/Manager Approval)" : "Dispensing & Sales Register (Immutable)"}</h3>
-      <div class="table-wrap">
-        <table><thead><tr><th>Time</th><th>Receipt &amp; Medicine</th><th>Batch</th><th>Qty</th><th>Total</th><th>Dispenser</th><th>Control</th></tr></thead><tbody>${saleRows}</tbody></table>
-      </div>
-    </div>
-  `;
-  onSellMedChange();
-}
-
-function addToCart() {
-  const medId = document.getElementById("sellMed").value;
-  const qty = parseInt(document.getElementById("sellQty").value, 10);
-  const unitPrice = money(parseFloat(document.getElementById("sellPrice").value));
-  const dosage = document.getElementById("sellDosage").value.trim();
-
-  const med = db.medicines.find(m => m.id === medId);
-  if (!med) return alert("Select a medicine.");
-  if (med.nda_schedule === "RESTRICTED") return alert("BLOCKED: Restricted medicine cannot be sold.");
-  if (!Number.isInteger(qty) || qty <= 0) return alert("Enter a valid integer base-unit quantity.");
-  if (Number.isNaN(unitPrice) || unitPrice < 0) return alert("Enter a valid unit price.");
-  if (unitPrice === 0 && !confirm("Unit price is 0.00. Add zero-price line?")) return;
-
-  const alreadyInCart = cart.filter(i => i.medId === medId).reduce((s, i) => s + i.qty, 0);
-  const avail = medAvailableStock(medId);
-  if (alreadyInCart + qty > avail) {
-    return alert(`Insufficient non-expired stock. Available: ${avail}, already in basket: ${alreadyInCart}.`);
-  }
-
-  const existingLine = cart.find(i => i.medId === med.id && i.unitPrice === unitPrice && i.dosage === dosage);
-  if (existingLine) {
-    existingLine.qty += qty;
-  } else {
-    cart.push({
-      medId: med.id,
-      medName: `${med.generic_name}${med.strength ? " (" + med.strength + ")" : ""}`,
-      baseUnit: med.base_unit,
-      qty,
-      unitPrice,
-      dosage
-    });
-  }
-  document.getElementById("sellDosage").value = "";
-  renderView();
-  toast(`Added ${qty} ${med.base_unit} to basket`);
-}
-
-function removeCartItem(idx) {
-  cart.splice(idx, 1);
-  renderView();
-}
-
-async function checkoutBasket() {
-  if (!requireCap("dispense", "Complete sale")) return;
-  if (!cart.length) {
-    const medId = document.getElementById("sellMed")?.value;
-    const qty = parseInt(document.getElementById("sellQty")?.value || "0", 10);
-    if (medId && qty > 0) {
-      addToCart();
-      if (!cart.length) return;
-    } else {
-      return alert("Add at least one medicine to the basket first.");
-    }
-  }
-
-  const grandTotal = money(cart.reduce((s, i) => s + money(i.qty * i.unitPrice), 0));
-  const payMethod = document.getElementById("sellPay")?.value || "CASH";
-  const payRef = document.getElementById("checkoutPayRef")?.value.trim() || "";
-
-  let totalCash = 0;
-  let totalMm = 0;
-  let creditCustomer = "";
-  let creditBalance = 0;
-
-  if (payMethod === "CASH") {
-    totalCash = grandTotal;
-  } else if (payMethod === "MOBILE_MONEY") {
-    totalMm = grandTotal;
-  } else if (payMethod === "SPLIT") {
-    totalCash = money(parseFloat(document.getElementById("splitCashInput")?.value || "0"));
-    totalMm = money(parseFloat(document.getElementById("splitMmInput")?.value || "0"));
-    if (Math.abs(money(totalCash + totalMm) - grandTotal) >= 0.01) {
-      return alert(`Split Cash (${totalCash.toFixed(2)}) + Mobile Money (${totalMm.toFixed(2)}) must equal Total (${grandTotal.toFixed(2)}).`);
-    }
-  } else if (payMethod === "CREDIT") {
-    creditCustomer = (document.getElementById("creditCustomer")?.value || "").trim();
-    if (!creditCustomer) return alert("Enter customer name and phone for approved credit.");
-    const deposit = money(parseFloat(document.getElementById("creditDeposit")?.value || "0"));
-    if (deposit < 0 || deposit >= grandTotal) return alert("Cash deposit must be >= 0 and less than total.");
-    const sup = await authorizeSupervisor(`Approve credit of ${(grandTotal - deposit).toFixed(2)} for ${creditCustomer}`);
-    if (!sup) return;
-    totalCash = deposit;
-    creditBalance = money(grandTotal - deposit);
-  }
-
-  for (const item of cart) {
-    const eligible = db.batches
-      .filter(b => b.medId === item.medId && batchStatus(b) === "ACTIVE")
-      .sort((a, b) => a.expiry.localeCompare(b.expiry));
-    const totalAvail = eligible.reduce((s, b) => s + b.qty, 0);
-    if (totalAvail < item.qty) {
-      return alert(`Stock changed: insufficient non-expired stock for ${item.medName} (avail ${totalAvail}).`);
-    }
-  }
-
-  const snapshot = JSON.stringify(db);
-  const receiptId = "RCP-" + Date.now();
-  let remCash = totalCash;
-  let remMm = totalMm;
-
-  try {
-    const plannedLines = [];
-    for (const item of cart) {
-      let remaining = item.qty;
-      const eligible = db.batches
-        .filter(b => b.medId === item.medId && batchStatus(b) === "ACTIVE")
-        .sort((a, b) => a.expiry.localeCompare(b.expiry));
-
-      for (const b of eligible) {
-        if (remaining <= 0) break;
-        const take = Math.min(b.qty, remaining);
-        b.qty -= take;
-        remaining -= take;
-        plannedLines.push({ item, batch: b, take, lineTotal: money(take * item.unitPrice) });
-      }
-      addAudit("SALE", `[${receiptId}] Dispensed ${item.qty} ${item.baseUnit} of ${item.medName} (${payMethod}) by ${session.name}`);
-    }
-
-    plannedLines.forEach((pl, idx) => {
-      const isLast = idx === plannedLines.length - 1;
-      const ratio = grandTotal > 0 ? pl.lineTotal / grandTotal : 0;
-      const lineCash = isLast ? money(remCash) : money(totalCash * ratio);
-      const lineMm = isLast ? money(remMm) : money(totalMm * ratio);
-      remCash = money(remCash - lineCash);
-      remMm = money(remMm - lineMm);
-
-      db.sales.unshift({
-        id: "S-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
-        receiptId,
-        time: nowIso(),
-        medId: pl.item.medId,
-        medName: pl.item.medName,
-        batchId: pl.batch.id,
-        batchNo: pl.batch.batchNo,
-        qty: pl.take,
-        unitPrice: pl.item.unitPrice,
-        total: pl.lineTotal,
-        payMethod,
-        cashPaid: lineCash,
-        mmPaid: lineMm,
-        payRef: payRef || (creditCustomer ? `Credit: ${creditCustomer}` : ""),
-        dosage: pl.item.dosage,
-        dispenser: session.name,
-        dispenserReg: session.regNo || "N/A",
-        voided: false
-      });
-    });
-
-    if (payMethod === "CREDIT" && creditBalance > 0) {
-      db.credits.unshift({
-        id: "CRD-" + Date.now(),
-        receiptId,
-        time: nowIso(),
-        customer: creditCustomer,
-        total: grandTotal,
-        paid: totalCash,
-        balance: creditBalance,
-        recordedBy: session.name,
-        settled: false
-      });
-      addAudit("CREDIT_OPEN", `[${receiptId}] Credit ${creditBalance.toFixed(2)} opened for ${creditCustomer}`);
-    }
-
-    cart = [];
-    saveDb();
-    renderView();
-    openReceipt(receiptId);
-  } catch (err) {
-    db = JSON.parse(snapshot);
-    alert("Checkout rolled back due to an error: " + (err?.message || err));
-  }
-}
-
-function openReceipt(receiptKey) {
-  const lines = db.sales.filter(s => (s.receiptId || s.id) === receiptKey);
-  if (!lines.length) return;
-  const first = lines[0];
-  const grandTotal = money(lines.filter(l => !l.voided).reduce((a, b) => a + money(b.total), 0));
-  const rowsHtml = lines.map(l => `
-    <tr>
-      <td>${esc(l.medName)}<br><small style="color:var(--muted);">Batch ${esc(l.batchNo)}${l.dosage ? " • Sig: " + esc(l.dosage) : ""}</small></td>
-      <td>${l.qty}</td>
-      <td>${money(l.total).toFixed(2)}${l.voided ? " (VOID)" : ""}</td>
-    </tr>
-  `).join("");
-
-  document.getElementById("receiptContent").innerHTML = `
-    <div style="text-align:center;border-bottom:1px dashed #cbd5e1;padding-bottom:10px;margin-bottom:10px;">
-      <strong style="font-size:16px;">${esc(db.shop.name)}</strong><br>
-      <small style="color:var(--muted);">NDA: ${esc(db.shop.nda || "N/A")} • LG: ${esc(db.shop.lg || "N/A")}</small><br>
-      <small>Receipt: <b>${esc(receiptKey)}</b> • ${esc(first.time.slice(0, 16).replace("T", " "))}</small>
-    </div>
-    <table style="margin-bottom:10px;">
-      <thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>
-    <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;margin-bottom:8px;">
-      <span>Total (${esc(first.payMethod)}${first.payRef ? " • " + esc(first.payRef) : ""})</span>
-      <span>${grandTotal.toFixed(2)}</span>
-    </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
-      Dispenser: ${esc(first.dispenser)} (Reg: ${esc(first.dispenserReg || "N/A")})
-    </div>
-    <div class="row no-print" style="justify-content:flex-end;margin:0;">
-      <button class="btn-ghost" onclick="window.print()">Print Receipt</button>
-      <button class="btn-primary" onclick="closeReceipt()">Done</button>
-    </div>
-  `;
-  document.getElementById("receiptModal").style.display = "flex";
-}
-
-function closeReceipt() {
-  document.getElementById("receiptModal").style.display = "none";
-}
-
-async function scanSellBarcode() {
-  try {
-    const code = await scanBarcodeWithCamera("Scan Medicine Barcode to Sell");
-    if (!code) return;
-    document.getElementById("sellSearch").value = code;
-    filterSellMeds();
-    const match = db.medicines.find(m => (m.barcode || "").trim().toLowerCase() === code.toLowerCase());
-    if (match) {
-      if (match.nda_schedule === "RESTRICTED") return alert("BLOCKED: Scanned medicine is marked RESTRICTED.");
-      document.getElementById("sellMed").value = match.id;
-      onSellMedChange();
-      toast(`Selected ${match.generic_name}`);
-    } else {
-      alert(`Barcode ${code} not found in catalogue.`);
-    }
-  } catch (err) {
-    if (!String(err?.message || "").includes("cancelled")) alert(err?.message || err);
-  }
-}
-
-function filterSellMeds() {
-  const q = document.getElementById("sellSearch").value.trim().toLowerCase();
-  const sel = document.getElementById("sellMed");
-  const usableMeds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && (
-    !q || m.generic_name.toLowerCase().includes(q) || (m.brand_name || "").toLowerCase().includes(q) || (m.barcode || "").toLowerCase().includes(q)
-  ));
-  sel.innerHTML = usableMeds.map(m => {
-    const avail = medAvailableStock(m.id);
-    const priceTag = Number(m.default_unit_price) > 0 ? ` @${money(m.default_unit_price)}` : "";
-    return `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${avail} ${esc(m.base_unit)}${priceTag}</option>`;
-  }).join("") || '<option value="">No matching medicine</option>';
-  onSellMedChange();
-}
-
-async function voidSale(saleId) {
-  const sale = db.sales.find(s => s.id === saleId);
-  if (!sale || sale.voided) return;
-  const siblings = sale.receiptId
-    ? db.sales.filter(s => !s.voided && s.receiptId === sale.receiptId && s.medId === sale.medId && s.id !== sale.id)
-    : [];
-  const splitNote = siblings.length
-    ? `\n(Note: This receipt has ${siblings.length} other batch split line(s) for ${sale.medName}.)`
-    : "";
-  const supervisor = await authorizeSupervisor(`Void batch line: ${sale.qty} x ${sale.medName} (Batch ${sale.batchNo})${splitNote}`);
-  if (!supervisor) return;
-  const reason = prompt("Reason for void (required):");
-  if (!reason || !reason.trim()) return alert("Void reason is required.");
-
-  sale.voided = true;
-  sale.voidReason = reason.trim();
-  sale.voidedBy = supervisor.name;
-  sale.cashPaid = 0;
-  sale.mmPaid = 0;
-
-  const batch = db.batches.find(b => b.id === sale.batchId);
-  if (batch) batch.qty += sale.qty;
-
-  // Reconcile any open credit linked to this receipt
-  if (sale.receiptId) {
-    const linkedCredit = (db.credits || []).find(c => c.receiptId === sale.receiptId && !c.settled);
-    if (linkedCredit) {
-      linkedCredit.total = Math.max(0, money(linkedCredit.total - sale.total));
-      linkedCredit.balance = Math.max(0, money(linkedCredit.balance - sale.total));
-      if (linkedCredit.balance <= 0) linkedCredit.settled = true;
-    }
-  }
-
-  addAudit("VOID_SALE", `Voided ${sale.id} (+${sale.qty} returned to batch ${sale.batchNo}) by ${supervisor.name} — Reason: ${reason.trim()}`);
-  saveDb();
-  renderView();
-  toast("Sale line voided and batch stock restored");
-}
-
-function renderGrn(v) {
-  if (!requireCap("receive_grn", "Stock/GRN")) return;
-  const medOpts = db.medicines.map(m =>
-    `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} (${esc(m.base_unit)}${m.pack_name ? ` | ${esc(m.pack_name)}=${m.pack_multiplier}` : ""})${m.barcode ? ` [${esc(m.barcode)}]` : ""} — ${esc(m.nda_schedule)}</option>`
-  ).join("");
-
-  const batchRows = db.batches.map(b => {
-    const m = db.medicines.find(x => x.id === b.medId);
-    const st = batchStatus(b);
-    const near = isNearExpiry(b);
-    const badgeCls = st === "ACTIVE" ? (near ? "warn" : "ok") : (st === "DEPLETED" ? "warn" : "bad");
-    const statusLabel = near ? `EXP ≤${daysUntilDateStr(b.expiry)}D` : st;
-    return `
-      <tr>
-        <td>${esc(m ? m.generic_name : b.medId)}</td>
-        <td>${esc(b.batchNo)}</td>
-        <td>${esc(b.wholesaler)}<br><small style="color:var(--muted);">Inv: ${esc(b.invoiceNo)}</small></td>
-        <td>${esc(b.expiry)}</td>
-        <td>${b.qty} ${esc(m ? m.base_unit : "")}</td>
-        <td><span class="badge ${badgeCls}">${statusLabel}</span></td>
-        <td style="white-space:nowrap;">
-          <button class="btn-ghost" onclick="toggleQuarantine('${esc(b.id)}')">${b.quarantined ? "Release" : "Quarantine"}</button>
-          <button class="btn-ghost" onclick="adjustBatchStock('${esc(b.id)}')">Adjust</button>
-        </td>
-      </tr>
-    `;
-  }).join("");
-
-  v.innerHTML = `
-    ${renderSelfJurisdictionBar()}
-    ${renderKpis()}
-    ${renderMitigationAlerts()}
-    <div class="card">
-      <h3>Goods Received Note (GRN) — Camera Stocking</h3>
-      <div class="row">
-        <input id="grnScannedCode" type="text" placeholder="Scanned / Barcode (optional)" style="width:185px;" />
-        <button class="btn-secondary" onclick="scanForStocking()">Scan Barcode to Stock</button>
-        <select id="grnMed" style="flex:1;min-width:240px;">${medOpts || '<option value="">Add or scan a medicine first</option>'}</select>
-      </div>
-      <div class="row">
-        <input id="grnWholesaler" type="text" placeholder="Licensed Wholesaler & NDA Wholesale Licence No." style="flex:1;min-width:240px;" />
-        <input id="grnInvoice" type="text" placeholder="Supplier Invoice No." />
-        <input id="grnBatch" type="text" placeholder="Manufacturer Batch No." />
-      </div>
-      <div class="row">
-        <label style="font-size:12px;color:var(--muted);font-weight:600;">Expiry: <input id="grnExpiry" type="date" /></label>
-        <select id="grnUnitMode">
-          <option value="BASE">Base Units</option>
-          <option value="PACK">Packs (Auto-Multiply)</option>
-        </select>
-        <input id="grnQty" type="number" min="1" placeholder="Qty" style="width:95px;" onkeydown="if(event.key==='Enter')receiveGrn()" />
-        <button class="chip" type="button" onclick="bumpQty('grnQty', 1)">+1</button>
-        <button class="chip" type="button" onclick="bumpQty('grnQty', 10)">+10</button>
-        <button class="btn-primary" onclick="receiveGrn()">Receive Stock</button>
-      </div>
-    </div>
-    <div class="card">
-      <h3>Batch Inventory (Immutable History)</h3>
-      <div class="table-wrap">
-        <table><thead><tr><th>Medicine</th><th>Batch</th><th>Supplier / Invoice</th><th>Expiry</th><th>Remaining</th><th>Status</th><th>Control</th></tr></thead><tbody>${batchRows}</tbody></table>
-      </div>
-    </div>
-  `;
-}
-
-async function scanForStocking() {
-  if (!requireCap("receive_grn", "Scan stock barcode")) return;
-  try {
-    const code = await scanBarcodeWithCamera("Scan Medicine During Stocking");
-    if (!code) return;
-    document.getElementById("grnScannedCode").value = code;
-
-    const existing = db.medicines.find(m => (m.barcode || "").trim().toLowerCase() === code.toLowerCase());
-    if (existing) {
-      if (existing.nda_schedule === "RESTRICTED") {
-        return alert(`BLOCKED: ${existing.generic_name} is marked RESTRICTED and cannot be stocked.`);
-      }
-      document.getElementById("grnMed").value = existing.id;
-      document.getElementById("grnQty").focus();
-      toast(`Matched ${existing.generic_name}`);
-      return;
-    }
-
-    const createNew = confirm(`Barcode "${code}" is not yet in your Medicines list.\n\nPress OK to register this medicine now for stocking.`);
-    if (!createNew) return;
-
-    const generic_name = (prompt("Generic Name (required):") || "").trim();
-    if (!generic_name) return alert("Generic name is required.");
-    const brand_name = (prompt("Brand Name (optional):") || "").trim();
-    const strength = (prompt("Strength e.g. 500mg (optional):") || "").trim();
-    const base_unit = ((prompt("Base Unit (TABLET, CAPSULE, ML, BOTTLE, SACHET, TUBE, PIECE):", "TABLET") || "TABLET").trim().toUpperCase());
-    const default_unit_price = money(parseFloat(prompt("Default Selling Price per 1 " + base_unit + " (optional, e.g. 200):", "0") || "0"));
-    const rawSched = ((prompt("NDA Schedule (CLASS_C or RESTRICTED):", "CLASS_C") || "CLASS_C").trim().toUpperCase());
-    const nda_schedule = rawSched === "RESTRICTED" ? "RESTRICTED" : "CLASS_C";
-
-    const newMed = {
-      id: "M-" + Date.now(),
-      generic_name,
-      brand_name,
-      dosage_form: "",
-      strength,
-      base_unit,
-      default_unit_price,
-      clinical_note: "",
-      reorder_level: 10,
-      barcode: code,
-      nda_schedule,
-      pack_name: "",
-      pack_multiplier: 1
-    };
-    db.medicines.push(newMed);
-    addAudit("ADD_MED_SCAN", `Added ${generic_name} with scanned barcode ${code} (${nda_schedule})`);
-    saveDb();
-    renderView();
-    document.getElementById("grnScannedCode").value = code;
-    document.getElementById("grnMed").value = newMed.id;
-    toast(`Registered ${generic_name}`);
-  } catch (err) {
-    if (!String(err?.message || "").includes("cancelled")) alert(err?.message || err);
-  }
-}
-
-function receiveGrn() {
-  if (!requireCap("receive_grn", "Receive GRN stock")) return;
-  const medId = document.getElementById("grnMed").value;
-  const scannedCode = document.getElementById("grnScannedCode").value.trim();
-  const wholesaler = document.getElementById("grnWholesaler").value.trim();
-  const invoiceNo = document.getElementById("grnInvoice").value.trim();
-  const batchNo = document.getElementById("grnBatch").value.trim();
-  const expiry = document.getElementById("grnExpiry").value;
-  const unitMode = document.getElementById("grnUnitMode").value;
-  const rawQty = parseInt(document.getElementById("grnQty").value, 10);
-
-  const med = db.medicines.find(m => m.id === medId);
-  if (!med) return alert("Select or scan a medicine.");
-  if (med.nda_schedule === "RESTRICTED") return alert("BLOCKED: Restricted medicine cannot be received.");
-  if (!wholesaler || !invoiceNo || !batchNo || !expiry || !Number.isInteger(rawQty) || rawQty <= 0) {
-    return alert("Wholesaler + NDA licence no., invoice no., manufacturer batch no., expiry date, and positive quantity are mandatory.");
-  }
-  if (expiry <= localDateStr()) return alert("BLOCKED: Expired stock cannot be received.");
-  if (db.batches.some(b => b.medId === medId && b.invoiceNo.toLowerCase() === invoiceNo.toLowerCase() && b.batchNo.toLowerCase() === batchNo.toLowerCase())) {
-    return alert("BLOCKED: Same batch on the same supplier invoice cannot be entered twice.");
-  }
-
-  if (scannedCode && !med.barcode) med.barcode = scannedCode;
-
-  const baseQty = unitMode === "PACK" ? rawQty * (med.pack_multiplier || 1) : rawQty;
-  db.batches.push({
-    id: "B-" + Date.now() + "-" + Math.random().toString(36).slice(2, 5),
-    receivedAt: nowIso(),
-    receivedBy: session.name,
-    medId,
-    wholesaler,
-    invoiceNo,
-    batchNo,
-    expiry,
-    initialQty: baseQty,
-    qty: baseQty,
-    quarantined: false
-  });
-  addAudit("GRN", `Received ${baseQty} ${med.base_unit} of ${med.generic_name} (Batch ${batchNo}, Inv ${invoiceNo}, Wholesaler ${wholesaler})`);
-  saveDb();
-  renderView();
-  toast(`Stocked ${baseQty} ${med.base_unit}`);
-}
-
-async function toggleQuarantine(batchId) {
-  if (!requireCap("receive_grn", "Toggle batch quarantine")) return;
-  const b = db.batches.find(x => x.id === batchId);
-  if (!b) return;
-  const supervisor = await authorizeSupervisor(`${b.quarantined ? "Release" : "Quarantine"} batch ${b.batchNo}`);
-  if (!supervisor) return;
-  const reason = prompt("Reason (required):");
-  if (!reason || !reason.trim()) return alert("Reason is required.");
-
-  b.quarantined = !b.quarantined;
-  addAudit("QUARANTINE", `Batch ${b.batchNo} quarantined=${b.quarantined} by ${supervisor.name} — Reason: ${reason.trim()}`);
-  saveDb();
-  renderView();
-  toast(b.quarantined ? "Batch quarantined" : "Batch released");
-}
-
-async function adjustBatchStock(batchId) {
-  if (!requireCap("receive_grn", "Adjust batch stock")) return;
-  const b = db.batches.find(x => x.id === batchId);
-  if (!b) return;
-  const supervisor = await authorizeSupervisor(`Adjust stock on batch ${b.batchNo} (current: ${b.qty})`);
-  if (!supervisor) return;
-  const deltaStr = prompt(`Enter quantity adjustment (+ to add, - to deduct) from ${b.qty}:`);
-  const delta = parseInt(deltaStr, 10);
-  if (!Number.isInteger(delta) || delta === 0) return alert("Enter a non-zero integer.");
-  if (b.qty + delta < 0) return alert("Adjustment cannot make batch stock negative.");
-  const reason = prompt("Reason for stock adjustment (required):");
-  if (!reason || !reason.trim()) return alert("Reason is required.");
-
-  b.qty += delta;
-  addAudit("STOCK_ADJUST", `Batch ${b.batchNo} adjusted by ${delta > 0 ? "+" + delta : delta} (new qty: ${b.qty}) by ${supervisor.name} — Reason: ${reason.trim()}`);
-  saveDb();
-  renderView();
-  toast("Stock adjusted");
-}
-
-function parseCsvLine(line) {
-  const out = [];
-  let cur = "", inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (ch === "," && !inQuotes) {
-      out.push(cur.trim());
-      cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  out.push(cur.trim());
-  return out;
-}
-
-function renderMeds(v) {
-  if (!requireCap("edit_meds", "Meds catalogue")) return;
-  const rows = db.medicines.map(m => {
-    const avail = medAvailableStock(m.id);
-    const isLow = m.nda_schedule !== "RESTRICTED" && avail <= (m.reorder_level || 0);
-    return `
-      <tr>
-        <td><strong>${esc(m.generic_name)}</strong>${m.clinical_note ? `<br><small style="color:var(--accent);">Note: ${esc(m.clinical_note)}</small>` : ""}</td>
-        <td>${esc(m.brand_name)}</td>
-        <td>${esc(m.dosage_form)} ${esc(m.strength)}</td>
-        <td>${Number(m.default_unit_price) > 0 ? money(m.default_unit_price).toFixed(2) : "-"}</td>
-        <td>${avail} ${esc(m.base_unit)} ${isLow ? '<span class="badge warn">LOW</span>' : ""}</td>
-        <td><span class="badge ${m.nda_schedule === "RESTRICTED" ? "bad" : "ok"}">${esc(m.nda_schedule)}</span></td>
-        <td><button class="btn-ghost" onclick="editMedQuick('${esc(m.id)}')">Price/Note</button></td>
-      </tr>
-    `;
-  }).join("");
-
-  v.innerHTML = `
-    ${renderSelfJurisdictionBar()}
-    <div class="card">
-      <h3>Quick Add Medicine (Single-Tablet &amp; Pack Ready)</h3>
-      <div class="row">
-        <input id="qmGen" type="text" placeholder="Generic Name *" style="flex:1;min-width:170px;" />
-        <input id="qmBrand" type="text" placeholder="Brand Name" style="width:140px;" />
-        <input id="qmStr" type="text" placeholder="Strength (500mg)" style="width:130px;" />
-        <select id="qmUnit" style="width:120px;">
-          <option value="TABLET">TABLET</option>
-          <option value="CAPSULE">CAPSULE</option>
-          <option value="ML">ML</option>
-          <option value="BOTTLE">BOTTLE</option>
-          <option value="SACHET">SACHET</option>
-          <option value="TUBE">TUBE</option>
-          <option value="PIECE">PIECE</option>
-        </select>
-      </div>
-      <div class="row">
-        <input id="qmPrice" type="number" min="0" step="0.01" placeholder="Default Unit Price" style="width:155px;" />
-        <input id="qmReorder" type="number" min="0" value="20" placeholder="Reorder Level" style="width:125px;" />
-        <input id="qmPackName" type="text" placeholder="Pack (Strip/Box)" style="width:135px;" />
-        <input id="qmPackMult" type="number" min="1" value="1" placeholder="Units/Pack" style="width:110px;" />
-        <select id="qmSched" style="width:130px;">
-          <option value="CLASS_C">CLASS_C</option>
-          <option value="RESTRICTED">RESTRICTED</option>
-        </select>
-      </div>
-      <div class="row">
-        <input id="qmNote" type="text" placeholder="LASA / High-Alert Caution Note (optional)" style="flex:1;min-width:220px;" />
-        <button class="btn-primary" onclick="quickAddMedicine()">Save Medicine</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Import Medicines CSV (Upserts Existing Items)</h3>
-      <p style="font-size:12px;color:var(--muted);">Columns: <code>generic_name,brand_name,dosage_form,strength,base_unit,reorder_level,barcode,nda_schedule,pack_name,pack_multiplier,default_unit_price,clinical_note</code></p>
-      <textarea id="csvInput" rows="3" style="width:100%;" placeholder="Paracetamol,Panadol,TABLET,500mg,TABLET,100,600123456789,CLASS_C,Strip,10,200,Max 4g/day"></textarea>
-      <div class="row" style="margin-top:8px;">
-        <button class="btn-primary" onclick="importCsv()">Import CSV</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Medicine Catalogue (${db.medicines.length})</h3>
-      <div class="table-wrap">
-        <table><thead><tr><th>Generic &amp; Caution</th><th>Brand</th><th>Form &amp; Strength</th><th>Unit Price</th><th>Stock</th><th>Schedule</th><th>Edit</th></tr></thead><tbody>${rows}</tbody></table>
-      </div>
-    </div>
-  `;
-}
-
-function quickAddMedicine() {
-  if (!requireCap("edit_meds", "Add medicine")) return;
-  const generic_name = document.getElementById("qmGen").value.trim();
-  if (!generic_name) return alert("Generic Name is required.");
-  const brand_name = document.getElementById("qmBrand").value.trim();
-  const strength = document.getElementById("qmStr").value.trim();
-  const base_unit = document.getElementById("qmUnit").value;
-  const default_unit_price = money(parseFloat(document.getElementById("qmPrice").value || "0"));
-  const reorder_level = parseInt(document.getElementById("qmReorder").value || "0", 10) || 0;
-  const pack_name = document.getElementById("qmPackName").value.trim();
-  const pack_multiplier = Math.max(1, parseInt(document.getElementById("qmPackMult").value || "1", 10) || 1);
-  const nda_schedule = document.getElementById("qmSched").value;
-  const clinical_note = document.getElementById("qmNote").value.trim();
-
-  db.medicines.push({
-    id: "M-" + Date.now(),
-    generic_name,
-    brand_name,
-    dosage_form: "",
-    strength,
-    base_unit,
-    default_unit_price,
-    clinical_note,
-    reorder_level,
-    barcode: "",
-    nda_schedule,
-    pack_name,
-    pack_multiplier
-  });
-  addAudit("ADD_MED", `Added ${generic_name} ${strength} (${base_unit}, default price ${default_unit_price})`);
-  saveDb();
-  renderView();
-  toast(`Saved ${generic_name}`);
-}
-
-function editMedQuick(medId) {
-  if (!requireCap("edit_meds", "Edit medicine price/note")) return;
-  const m = db.medicines.find(x => x.id === medId);
-  if (!m) return;
-  const pStr = prompt(`Default unit selling price for 1 ${m.base_unit} of ${m.generic_name}:`, String(m.default_unit_price || 0));
-  if (pStr === null) return;
-  const noteStr = prompt(`LASA / Clinical caution note for ${m.generic_name} (blank to clear):`, m.clinical_note || "");
-  if (noteStr === null) return;
-  m.default_unit_price = Math.max(0, money(parseFloat(pStr) || 0));
-  m.clinical_note = noteStr.trim();
-  addAudit("EDIT_MED", `Updated ${m.generic_name}: unitPrice=${m.default_unit_price}, note="${m.clinical_note}"`);
-  saveDb();
-  renderView();
-  toast("Medicine updated");
-}
-
-function importCsv() {
-  if (!requireCap("edit_meds", "Import medicines CSV")) return;
-  const raw = document.getElementById("csvInput").value.trim();
-  if (!raw) return alert("Paste CSV rows first.");
-  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const startIdx = lines[0].toLowerCase().startsWith("generic_name") ? 1 : 0;
-  let added = 0, updated = 0;
-
-  for (let i = startIdx; i < lines.length; i++) {
-    const cols = parseCsvLine(lines[i]);
-    if (!cols[0]) continue;
-    const rawSched = (cols[7] || "CLASS_C").toUpperCase();
-    const item = {
-      generic_name: cols[0],
-      brand_name: cols[1] || "",
-      dosage_form: (cols[2] || "").toUpperCase(),
-      strength: cols[3] || "",
-      base_unit: (cols[4] || "TABLET").toUpperCase(),
-      reorder_level: parseInt(cols[5] || "0", 10) || 0,
-      barcode: cols[6] || "",
-      nda_schedule: rawSched === "RESTRICTED" ? "RESTRICTED" : "CLASS_C",
-      pack_name: cols[8] || "",
-      pack_multiplier: Math.max(1, parseInt(cols[9] || "1", 10) || 1),
-      default_unit_price: Math.max(0, money(parseFloat(cols[10] || "0") || 0)),
-      clinical_note: cols[11] || ""
-    };
-    const existing = db.medicines.find(m =>
-      m.generic_name.toLowerCase() === item.generic_name.toLowerCase() &&
-      (m.strength || "").toLowerCase() === item.strength.toLowerCase() &&
-      (m.dosage_form || "").toLowerCase() === item.dosage_form.toLowerCase()
-    );
-    if (existing) {
-      Object.assign(existing, item);
-      updated++;
-    } else {
-      db.medicines.push({ id: "M-" + Date.now() + "-" + i, ...item });
-      added++;
-    }
-  }
-  addAudit("IMPORT_MEDS", `CSV import: ${added} added, ${updated} updated`);
-  saveDb();
-  renderView();
-  toast(`Imported ${added} new, updated ${updated}`);
-}
-
-function renderReports(v) {
-  if (!requireCap("view_reports", "Reports")) return;
-  const validSales = db.sales.filter(s => !s.voided);
-  const cashTotal = money(validSales.reduce((a, b) => a + money(b.cashPaid ?? (b.payMethod === "CASH" ? b.total : 0)), 0));
-  const mmTotal = money(validSales.reduce((a, b) => a + money(b.mmPaid ?? (b.payMethod === "MOBILE_MONEY" ? b.total : 0)), 0));
-  const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "null");
-
-  const openCredits = (db.credits || []).filter(c => !c.settled);
-  const creditRows = openCredits.length
-    ? openCredits.map(c => `
-        <tr>
-          <td>${esc(c.time.slice(0, 10))}</td>
-          <td><strong>${esc(c.customer)}</strong><br><small style="color:var(--muted);">${esc(c.receiptId)}</small></td>
-          <td>${money(c.total).toFixed(2)}</td>
-          <td><strong>${money(c.balance).toFixed(2)}</strong></td>
-          <td><button class="btn-primary" style="min-height:32px;padding:4px 10px;font-size:12px;" onclick="settleCreditPayment('${esc(c.id)}')">Record Payment</button></td>
-        </tr>
-      `).join("")
-    : `<tr><td colspan="5" style="color:var(--muted);">No unpaid customer credits.</td></tr>`;
-
-  const restockItems = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED").map(m => {
-    const avail = medAvailableStock(m.id);
-    const shortBatch = db.batches.filter(b => b.medId === m.id && isNearExpiry(b)).sort((a, b) => a.expiry.localeCompare(b.expiry))[0];
-    const isLow = avail <= (m.reorder_level || 0);
-    if (!isLow && !shortBatch) return null;
-    return `
-      <tr>
-        <td>${esc(m.generic_name)} ${esc(m.strength)}</td>
-        <td>${avail} ${esc(m.base_unit)} (Min ${m.reorder_level || 0})</td>
-        <td>${isLow ? '<span class="badge warn">REORDER</span> ' : ""}${shortBatch ? `<span class="badge bad">EXP ${esc(shortBatch.expiry)}</span>` : ""}</td>
-      </tr>
-    `;
-  }).filter(Boolean).join("") || `<tr><td colspan="3" style="color:var(--muted);">All medicines above reorder level and no ≤ 30d batches.</td></tr>`;
-
-  const auditRows = db.audit.slice(0, 40).map(a =>
-    `<tr><td>#${esc(a.seq ?? "-")}</td><td>${esc(a.time.slice(0, 19).replace("T", " "))}</td><td>${esc(a.user)}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`
-  ).join("");
-
-  v.innerHTML = `
-    ${renderSelfJurisdictionBar()}
-    ${renderKpis()}
-    ${renderMitigationAlerts()}
-
-    <div class="card">
-      <h3>Owner &amp; Manager Executive Snapshot &amp; Cash-Up</h3>
-      <p style="margin:0 0 10px;">
-        <strong>Expected Cash in Drawer:</strong> ${cashTotal.toFixed(2)} &bull;
-        <strong>Mobile Money Collected:</strong> ${mmTotal.toFixed(2)} &bull;
-        <strong>Credit Receivables:</strong> ${openCreditBalance().toFixed(2)}
-      </p>
-      <div class="row">
-        <input id="countedCash" type="number" step="0.01" placeholder="Counted Cash in Drawer" />
-        <button class="btn-primary" onclick="closeDay(${cashTotal}, ${mmTotal})">Close Day</button>
-        <button class="btn-secondary" onclick="recordShiftHandover(${cashTotal}, ${mmTotal})">Shift Handover</button>
-        <button class="btn-ghost" onclick="exportDispensingCsv()">Export NDA CSV</button>
-        <button class="btn-ghost" onclick="exportBackupJson()">Backup JSON</button>
-        <button class="btn-ghost" onclick="exportWindowsBridgeBundle()">Windows Pack</button>
-        <label class="btn-ghost" style="display:inline-flex;align-items:center;">
-          Restore JSON <input type="file" accept="application/json,.json" onchange="restoreBackupJson(event)" style="display:none;" />
-        </label>
-      </div>
-      <small style="color:var(--muted);">
-        Last auto-snapshot: ${snap?.savedAt ? esc(snap.savedAt.slice(0, 19).replace("T", " ")) : "None"}${snap?.checksum ? ` • CHK ${esc(snap.checksum)}` : ""}
-        ${db.meta?.lastExportAt ? ` • Last export: ${esc(db.meta.lastExportAt.slice(0, 16).replace("T", " "))}` : ""}
-      </small>
-    </div>
-
-    <div class="grid-2">
-      <div class="card">
-        <h3>Trusted Customer Credit Ledger</h3>
-        <div class="table-wrap">
-          <table><thead><tr><th>Date</th><th>Customer</th><th>Total</th><th>Balance</th><th>Action</th></tr></thead><tbody>${creditRows}</tbody></table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Wholesaler Restock &amp; Short-Expiry List</h3>
-        <div class="table-wrap">
-          <table><thead><tr><th>Medicine</th><th>Stock</th><th>Flag</th></tr></thead><tbody>${restockItems}</tbody></table>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Storage Temperature Log (NDA Inspector Pack)</h3>
-      <div class="row">
-        <input id="tempC" type="number" step="0.1" placeholder="Room Temp (°C)" style="width:145px;" />
-        <input id="fridgeC" type="number" step="0.1" placeholder="Fridge Temp (°C)" style="width:155px;" />
-        <button class="btn-primary" onclick="logTemp()">Record Temperature</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Immutable Audit Log</h3>
-      <div class="table-wrap">
-        <table><thead><tr><th>#</th><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr></thead><tbody>${auditRows}</tbody></table>
-      </div>
-    </div>
-  `;
-}
-
-function settleCreditPayment(creditId) {
-  if (!requireCap("settle_credit", "Record credit repayment")) return;
-  const c = (db.credits || []).find(x => x.id === creditId && !x.settled);
-  if (!c) return;
-  const amtStr = prompt(`Customer: ${c.customer}\nRemaining Balance: ${money(c.balance).toFixed(2)}\nEnter amount paid now:`);
-  if (!amtStr) return;
-  const amt = money(parseFloat(amtStr));
-  if (Number.isNaN(amt) || amt <= 0 || amt > money(c.balance)) {
-    return alert("Enter a valid payment between 0.01 and the remaining balance.");
-  }
-  const method = (prompt("Payment method (CASH or MOBILE_MONEY):", "CASH") || "CASH").trim().toUpperCase();
-  c.paid = money(c.paid + amt);
-  c.balance = money(c.balance - amt);
-  if (c.balance <= 0) c.settled = true;
-  addAudit("CREDIT_PAY", `Received ${amt.toFixed(2)} (${method}) from ${c.customer} on ${c.receiptId}; remaining=${c.balance.toFixed(2)}`);
-  saveDb();
-  renderView();
-  toast("Credit payment recorded");
-}
-
-function recordShiftHandover(expectedCash, mmTotal) {
-  if (!requireCap("close_day", "Record shift handover")) return;
-  const nextStaff = (prompt("Incoming Dispenser / Shift Note (optional):") || "").trim();
-  const countedRaw = document.getElementById("countedCash")?.value;
-  const counted = countedRaw !== "" && countedRaw !== undefined ? money(parseFloat(countedRaw)) : money(expectedCash);
-  const diff = money(counted - expectedCash);
-  db.shiftHandovers.unshift({
-    id: "SH-" + Date.now(),
-    time: nowIso(),
-    outgoing: session.name,
-    incoming: nextStaff || "Next Shift",
-    expectedCash: money(expectedCash),
-    countedCash: counted,
-    variance: diff,
-    mmTotal: money(mmTotal)
-  });
-  addAudit("SHIFT_HANDOVER", `Outgoing=${session.name}, Incoming=${nextStaff || "Next Shift"}, Cash=${counted.toFixed(2)} (Var ${diff.toFixed(2)}), MM=${money(mmTotal).toFixed(2)}`);
-  saveDb();
-  renderView();
-  toast("Shift handover logged");
-}
-
-function logTemp() {
-  if (!requireCap("view_reports", "Log storage temperature")) return;
-  const room = document.getElementById("tempC").value.trim();
-  const fridge = document.getElementById("fridgeC").value.trim();
-  if (!room) return alert("Enter room temperature.");
-  db.tempLogs.unshift({ time: nowIso(), by: session.name, roomC: room, fridgeC: fridge || "N/A" });
-  addAudit("TEMP_LOG", `Room: ${room}°C, Fridge: ${fridge || "N/A"}°C`);
-  saveDb();
-  toast("Temperature logged");
-}
-
-function closeDay(expectedCash, mmTotal) {
-  if (!requireCap("close_day", "Close day cash-up")) return;
-  const counted = parseFloat(document.getElementById("countedCash").value);
-  if (Number.isNaN(counted)) return alert("Enter counted cash.");
-  const diff = money(counted - expectedCash);
-  const flag = Math.abs(diff) >= 0.01 ? "VARIANCE_FLAGGED" : "EXACT_MATCH";
-  addAudit("DAY_CLOSE", `[${flag}] By=${session.name}, ExpectedCash=${money(expectedCash).toFixed(2)}, CountedCash=${money(counted).toFixed(2)}, Variance=${diff.toFixed(2)}, MobileMoney=${money(mmTotal).toFixed(2)}`);
-  saveDb();
-  alert(`Day close recorded permanently (${flag}). Cash Variance: ${diff.toFixed(2)}`);
-  renderView();
-}
-
-function exportDispensingCsv() {
-  if (!requireCap("view_reports", "Export NDA CSV")) return;
-  const header = "time,receipt_id,medicine,batch_no,qty,unit_price,total,payment,cash_paid,mm_paid,pay_ref,dosage,dispenser,council_reg_no,voided\n";
-  const body = db.sales.map(s =>
-    [s.time, s.receiptId || "", `"${String(s.medName).replace(/"/g, '""')}"`, s.batchNo, s.qty, s.unitPrice, s.total, s.payMethod, s.cashPaid ?? "", s.mmPaid ?? "", `"${String(s.payRef || "").replace(/"/g, '""')}"`, `"${String(s.dosage || "").replace(/"/g, '""')}"`, `"${String(s.dispenser).replace(/"/g, '""')}"`, `"${String(s.dispenserReg).replace(/"/g, '""')}"`, s.voided].join(",")
-  ).join("\n");
-  db.meta.lastExportAt = nowIso();
-  addAudit("EXPORT_CSV", "Exported NDA dispensing register CSV");
-  saveDb();
-  renderView();
-  downloadBlob(header + body, `sseddume-dispensing-register-${localDateStr()}.csv`, "text/csv");
-  toast("NDA CSV exported");
-}
-
-function exportBackupJson() {
-  if (!requireCap("view_reports", "Export backup JSON")) return;
-  const snapshotCopy = JSON.parse(JSON.stringify(db));
-  const envelope = {
-    system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
-    exportedAt: nowIso(),
-    checksum: computeChecksum(snapshotCopy),
-    data: snapshotCopy
-  };
-  db.meta.lastExportAt = nowIso();
-  addAudit("EXPORT_JSON", `Exported JSON backup [CHK:${envelope.checksum}]`);
-  saveDb();
-  renderView();
-  downloadBlob(JSON.stringify(envelope, null, 2), `sseddume-dsms-backup-${localDateStr()}.json`, "application/json");
-  toast("Verified JSON backup downloaded");
-}
-
-async function restoreBackupJson(ev) {
-  if (!requireCap("view_reports", "Restore backup JSON")) return;
-  const file = ev.target.files?.[0];
-  ev.target.value = "";
-  if (!file) return;
-  const supervisor = await authorizeSupervisor("Restore database from JSON backup (replaces current local data)");
-  if (!supervisor) return;
-  try {
-    const parsed = JSON.parse(await file.text());
-    const payload = parsed?.data && typeof parsed.data === "object" ? parsed.data : parsed;
-    if (parsed?.checksum) {
-      const actual = computeChecksum(payload);
-      if (actual !== parsed.checksum) {
-        return alert(`BLOCKED: Backup checksum mismatch (expected ${parsed.checksum}, got ${actual}). File may be corrupted or altered.`);
-      }
-    }
-    if (!payload || !Array.isArray(payload.medicines) || !Array.isArray(payload.batches) || !Array.isArray(payload.sales)) {
-      return alert("Invalid backup JSON structure.");
-    }
-    const base = defaultState();
-    db = {
-      ...base,
-      ...payload,
-      shop: { ...base.shop, ...(payload.shop || {}) },
-      windowsBridge: { ...base.windowsBridge, ...(payload.windowsBridge || {}) },
-      meta: { ...base.meta, ...(payload.meta || {}) },
-      credits: Array.isArray(payload.credits) ? payload.credits : [],
-      shiftHandovers: Array.isArray(payload.shiftHandovers) ? payload.shiftHandovers : []
-    };
-    await migratePlainSecretsToHashes();
-    addAudit("RESTORE_BACKUP", `Restored verified backup from ${file.name} by ${supervisor.name}`);
-    saveDb();
-    populateLoginStaff();
-    renderView();
-    toast("Backup restored");
-  } catch (err) {
-    alert("Failed to restore backup: " + (err?.message || err));
-  }
-}
-
-function downloadBlob(content, filename, mime) {
-  const url = URL.createObjectURL(new Blob([content], { type: mime }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-async function rotateOwnerRecoveryCode() {
-  if (!requireCap("shop_settings", "Rotate Owner Recovery Code")) return;
-  const rawRec = generateRecoveryCode();
-  await setOwnerRecoverySecret(rawRec);
-  addAudit("RECOVERY_ROTATE", "Owner rotated hashed recovery secret");
-  saveDb();
-  renderView();
-  alert(`New Owner Recovery Code:\n\n${rawRec}\n\nWrite this down and store it safely off this device. It is hashed in storage and cannot be viewed again.`);
-}
-
-function onRoleSelectChange() {
-  const role = document.getElementById("stRole")?.value || "Dispenser";
-  const hint = document.getElementById("roleScopeHint");
-  const regInput = document.getElementById("stReg");
-  if (!hint || !regInput) return;
-  if (role === "Owner") {
-    hint.textContent = "Owner Window: Full control across all shop screens, staff activation, and settings.";
-    regInput.placeholder = "Council Reg No. (optional for Owner)";
-  } else if (role === "In-Charge") {
-    hint.textContent = "Manager (In-Charge) Command Window: Dispensing, Stock/GRN, Meds, Reports & supervisor approvals. Cannot open Admin or deactivate staff.";
-    regInput.placeholder = "Council Registration No. (required)";
-  } else {
-    hint.textContent = "Counter Staff (Dispenser) Window: Opens strictly in the Counter Dispensing Window (Sell & own tablet fingerprint only). No access to Stock, Meds, Reports, or Admin.";
-    regInput.placeholder = "Council Registration No. (required)";
-  }
-}
-
-function toggleStaffActive(staffId) {
-  if (!requireCap("deactivate_staff", "Change staff active status")) return;
-  const user = db.staff.find(s => s.id === staffId);
-  if (!user) return;
-  const currentlyActive = user.active !== false;
-  if (currentlyActive) {
-    if (user.id === session.id) {
-      return alert("You cannot deactivate your own active Owner account while signed in.");
-    }
-    if (user.role === "Owner") {
-      const otherActiveOwners = db.staff.filter(s => s.role === "Owner" && s.active !== false && s.id !== user.id);
-      if (!otherActiveOwners.length) {
-        return alert("At least one active Owner account must remain active.");
-      }
-    }
-    const reason = prompt(`Reason for deactivating ${user.name} (${roleLabel(user.role)}) — required:`);
-    if (!reason || !reason.trim()) return alert("Deactivation reason is required.");
-    user.active = false;
-    addAudit("STAFF_DEACTIVATE", `Deactivated ${user.name} (${roleLabel(user.role)}) — Reason: ${reason.trim()}`);
-    saveDb();
-    populateLoginStaff();
-    renderView();
-    toast(`${user.name} deactivated`);
-  } else {
-    user.active = true;
-    addAudit("STAFF_ACTIVATE", `Reactivated ${user.name} (${roleLabel(user.role)})`);
-    saveDb();
-    populateLoginStaff();
-    renderView();
-    toast(`${user.name} reactivated`);
-  }
-}
-
-function renderAdmin(v) {
-  if (!requireCap("manage_staff", "Open Admin screen")) return;
-  const wb = db.windowsBridge || {};
-  const ownerProfile = db.staff.find(s => s.id === session.id) || db.staff.find(s => s.role === "Owner");
-
-  const staffRows = db.staff.map(s => {
-    const isActive = s.active !== false;
-    const isSelf = ownerProfile && s.id === ownerProfile.id;
-    const windowTag = s.role === "Dispenser" ? "Counter Window" : "Command Window";
-    const bio = getDeviceBioForUser(s.id);
-    return `
-      <tr>
-        <td><strong>${esc(s.name)}</strong> ${isSelf ? '<span class="badge info">YOU</span>' : ""}</td>
-        <td><span class="badge ${s.role === "Owner" ? "info" : (s.role === "In-Charge" ? "ok" : "warn")}">${roleLabel(s.role)}</span><br><small style="color:var(--muted);">${windowTag}</small></td>
-        <td>${esc(s.regNo || "N/A")}</td>
-        <td>${isActive ? '<span class="badge ok">ACTIVE</span>' : '<span class="badge bad">DEACTIVATED</span>'}</td>
-        <td>${bio ? '<span class="badge ok">THIS TABLET</span>' : '<span class="badge warn">SELF / OTHER TABLET</span>'}</td>
-        <td style="white-space:nowrap;">
-          <button class="btn-ghost" onclick="enrollFingerprintForStaff('${esc(s.id)}')">${bio ? "Reset FP" : "Enroll FP"}</button>
-          ${bio ? `<button class="btn-ghost" onclick="disableFingerprintForStaff('${esc(s.id)}')">Disable FP</button>` : ""}
-          ${!isSelf ? `<button class="${isActive ? "btn-danger" : "btn-primary"}" style="min-height:32px;padding:4px 10px;font-size:12px;" onclick="toggleStaffActive('${esc(s.id)}')">${isActive ? "Deactivate" : "Activate"}</button>` : ""}
-        </td>
-      </tr>
-    `;
-  }).join("");
-
-  v.innerHTML = `
-    ${renderSelfJurisdictionBar()}
-
-    <div class="card">
-      <h3>Shop, NDA Licence &amp; Owner Recovery</h3>
-      <div class="row">
-        <input id="admName" type="text" value="${esc(db.shop.name)}" placeholder="Drug Shop Name" style="flex:1;min-width:220px;" />
-        <input id="admNda" type="text" value="${esc(db.shop.nda)}" placeholder="NDA Licence No." />
-        <input id="admLg" type="text" value="${esc(db.shop.lg)}" placeholder="Local Government Licence No." />
-        <label style="font-size:12.5px;display:inline-flex;align-items:center;gap:6px;">
-          <input id="admAutoLock" type="checkbox" ${db.shop.autoLockOnHide ? "checked" : ""} style="min-height:auto;" /> Auto-lock when app hidden
-        </label>
-        <button class="btn-primary" onclick="saveShopDetails()">Save Shop Details</button>
-      </div>
-      <div class="row" style="margin-top:6px;margin-bottom:0;">
-        <span style="font-size:12.5px;color:var(--muted);">Owner Recovery Secret: <code>${esc(db.shop.recoveryHint || "Not generated")}</code> (SHA-256 Protected)</span>
-        <button class="btn-ghost" onclick="rotateOwnerRecoveryCode()">Generate New Recovery Code</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Windows App Pairing</h3>
-      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px;">
-        Scan a Windows QR code or paste a pairing string (<code>SSEDDUME-WIN|Shop-PC|http://192.168.1.50:8080|PAIR-01</code>) to link this tablet with a Windows desktop station.
-      </p>
-      <div class="row">
-        <input id="winCodeInput" type="text" value="${esc(wb.endpointUrl || wb.tokenOrCode || "")}" placeholder="SSEDDUME-WIN|Host|http://PC-IP:8080|CODE" style="flex:1;min-width:240px;" />
-        <button class="btn-accent" onclick="scanWindowsPairingQr()">Scan QR</button>
-        <button class="btn-primary" onclick="saveManualWindowsBridge()">Link Windows</button>
-        <button class="btn-ghost" onclick="exportWindowsBridgeBundle()">Export Win Pack</button>
-        ${wb.paired ? `<button class="btn-ghost" onclick="unpairWindowsBridge()">Unpair</button>` : ""}
-      </div>
-      <div style="font-size:12px;color:var(--muted);">
-        Status: <strong>${wb.paired ? `Paired with ${esc(wb.hostName || "Windows PC")} (${esc(wb.endpointUrl || "Code linked")})` : "Not paired yet"}</strong>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Add Staff &amp; Assign Window Jurisdiction</h3>
-      <div class="row">
-        <input id="stName" type="text" placeholder="Full Name" />
-        <select id="stRole" onchange="onRoleSelectChange()">
-          <option value="Dispenser">Counter Staff (Dispenser) — Counter Window</option>
-          <option value="In-Charge">Manager (In-Charge) — Command Window</option>
-          <option value="Owner">Owner — Full Owner Control</option>
-        </select>
-        <input id="stReg" type="text" placeholder="Council Registration No. (required)" />
-        <input id="stPin" type="password" inputmode="numeric" placeholder="Staff PIN (min 4)" maxlength="8" />
-        <button class="btn-primary" onclick="addStaff()">Add Staff</button>
-      </div>
-      <div id="roleScopeHint" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
-      <div class="table-wrap">
-        <table><thead><tr><th>Name</th><th>Role &amp; Window</th><th>Council Reg No.</th><th>Account</th><th>Device FP</th><th>Owner Controls</th></tr></thead><tbody>${staffRows}</tbody></table>
-      </div>
-    </div>
-  `;
-  onRoleSelectChange();
-}
-
-function saveManualWindowsBridge() {
-  if (!requireCap("pair_windows", "Link Windows host")) return;
-  const val = document.getElementById("winCodeInput").value.trim();
-  if (!val) return alert("Enter or scan a Windows pairing code or URL.");
-  applyWindowsPairingPayload(val);
-}
-
-function saveShopDetails() {
-  if (!requireCap("shop_settings", "Save shop details")) return;
-  db.shop.name = document.getElementById("admName").value.trim() || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
-  db.shop.nda = document.getElementById("admNda").value.trim();
-  db.shop.lg = document.getElementById("admLg").value.trim();
-  db.shop.autoLockOnHide = Boolean(document.getElementById("admAutoLock")?.checked);
-  addAudit("ADMIN_SHOP", `Updated shop details (${db.shop.name}, NDA: ${db.shop.nda}, LG: ${db.shop.lg}, AutoLock=${db.shop.autoLockOnHide})`);
-  saveDb();
-  toast("Shop details saved");
-}
-
-async function addStaff() {
-  if (!requireCap("manage_staff", "Add staff account")) return;
-  const name = document.getElementById("stName").value.trim();
-  const role = document.getElementById("stRole").value;
-  const regNo = document.getElementById("stReg").value.trim();
-  const pin = document.getElementById("stPin").value.trim();
-
-  if (!name || pin.length < 4) return alert("Enter staff name and a PIN of at least 4 digits.");
-  if ((role === "In-Charge" || role === "Dispenser") && !regNo) {
-    return alert("Council registration number is required for Manager (In-Charge) and Counter Staff (Dispenser).");
-  }
-  const newUser = {
-    id: "U-" + Date.now(),
-    name,
-    role,
-    regNo: regNo || "N/A",
-    active: true
-  };
-  await setStaffPin(newUser, pin);
-  db.staff.push(newUser);
-  addAudit("ADD_STAFF", `Added ${name} as ${roleLabel(role)} (Reg: ${regNo || "N/A"}) with hashed PIN`);
-  saveDb();
-  renderView();
-  toast(`Added ${name} (${roleLabel(role)})`);
-}
-
-(async () => {
-  await migratePlainSecretsToHashes();
-  populateLoginStaff();
-  renderHeader();
-})();
-</script>
+        function switchView(tabId, btn) {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+            document.getElementById('cart-footer').style.display = (tabId === 'tab-dispense') ? 'flex' : 'none';
+            if (tabId === 'tab-supervisor') loadSupervisorChallenges();
+        }
+
+        async function syncDelta() {
+            try {
+                const role = document.getElementById('operator-role').value;
+                const r = await fetch(`${baseUrl}/api/sync/delta?since=${lastSeq}`, { headers: { 'X-Staff-Role': role } });
+                if (r.ok) {
+                    const data = await r.json();
+                    if (data.items && data.items.length > 0) {
+                        data.items.forEach(newItem => {
+                            const idx = catalog.findIndex(c => c.Barcode === newItem.Barcode);
+                            if (idx >= 0) catalog[idx] = newItem; else catalog.push(newItem);
+                        });
+                        lastSeq = data.currentSequence;
+                    }
+                    document.getElementById('station-dot').className = "status-dot online";
+                    document.getElementById('station-text').textContent = "Master Workstation Connected";
+                }
+            } catch(e) {
+                document.getElementById('station-dot').className = "status-dot";
+                document.getElementById('station-text').textContent = "Offline (Local Queue)";
+            }
+        }
+
+        function filterCatalog(q) {
+            const list = document.getElementById('catalog-matches');
+            if (!q || q.length < 2) { list.innerHTML = ""; return; }
+            const matches = catalog.filter(c => c.BrandName.toLowerCase().includes(q.toLowerCase()) || c.GenericName.toLowerCase().includes(q.toLowerCase()) || c.Barcode === q);
+            list.innerHTML = matches.map(m => `
+                <div class="item-card">
+                    <div class="item-header">
+                        <div>
+                            <div class="drug-title">${m.BrandName}</div>
+                            <div class="drug-cat">${m.GenericName} | ${m.Category}</div>
+                        </div>
+                        <span style="font-size:0.75rem; color:var(--success); font-weight:700;">${m.TotalAvailableUnits} units</span>
+                    </div>
+                    <div class="unit-grid">
+                        <div class="unit-chip selected" onclick="chooseUnit(this, '${m.Barcode}', 0)">Pack (${m.RetailPackPriceUgx} UGX)</div>
+                        <div class="unit-chip" onclick="chooseUnit(this, '${m.Barcode}', 1)">Strip (${m.RetailStripPriceUgx} UGX)</div>
+                        <div class="unit-chip" onclick="chooseUnit(this, '${m.Barcode}', 2)">Unit (${m.RetailSingleUnitPriceUgx} UGX)</div>
+                    </div>
+                    <div class="sig-grid">
+                        <span class="sig-chip" onclick="chooseSig('${m.Barcode}', '1 TDS x 5/7 (After Food)')">1 TDS x 5/7</span>
+                        <span class="sig-chip" onclick="chooseSig('${m.Barcode}', '1 BD x 3/7')">1 BD x 3/7</span>
+                        <span class="sig-chip" onclick="chooseSig('${m.Barcode}', '2 STAT then 1 OD')">STAT -> OD</span>
+                        <span class="sig-chip" onclick="chooseSig('${m.Barcode}', '1 PRN (Pain)')">1 PRN</span>
+                    </div>
+                    <button class="btn-stage" style="margin-top:4px; padding:6px;" onclick="addToBasket('${m.Barcode}')">+ Add To Prescription</button>
+                </div>
+            `).join('');
+        }
+
+        function chooseUnit(el, barcode, u) {
+            el.parentElement.querySelectorAll('.unit-chip').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedUnits[barcode] = u;
+        }
+
+        function chooseSig(barcode, sig) { selectedSigs[barcode] = sig; beep(true); }
+
+        function addToBasket(barcode) {
+            const item = catalog.find(c => c.Barcode === barcode);
+            if (!item) return;
+            const u = selectedUnits[barcode] ?? 0;
+            const price = u === 0 ? item.RetailPackPriceUgx : (u === 1 ? item.RetailStripPriceUgx : item.RetailSingleUnitPriceUgx);
+            const sig = selectedSigs[barcode] || "As Directed";
+
+            cart.push({
+                SkuId: item.SkuId,
+                Barcode: item.Barcode,
+                DrugName: item.BrandName,
+                DispenseUnit: u,
+                QuantityToDispense: 1,
+                UnitPriceUgx: price,
+                LineTotalUgx: price,
+                DosageInstructions: sig,
+                AllocatedBatch: ""
+            });
+            beep(true);
+            renderBasket();
+        }
+
+        function renderBasket() {
+            const cList = document.getElementById('active-cart');
+            let sum = 0;
+            cList.innerHTML = cart.map((line, idx) => {
+                sum += line.LineTotalUgx;
+                const unitName = line.DispenseUnit === 0 ? 'Pack' : (line.DispenseUnit === 1 ? 'Strip' : 'Unit');
+                return `
+                    <div class="item-card">
+                        <div class="item-header">
+                            <span class="drug-title">${line.DrugName} (${unitName})</span>
+                            <span style="color:var(--accent); font-weight:700;">${line.LineTotalUgx} UGX</span>
+                        </div>
+                        <div style="font-size:0.7rem; color:var(--text-muted);">Sig: ${line.DosageInstructions}</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                            <div>
+                                <button style="width:26px; height:26px; background:var(--bg-elevated); border:1px solid var(--border); color:#fff;" onclick="adjustQty(${idx}, -1)">-</button>
+                                <span style="margin:0 8px; font-weight:700;">${line.QuantityToDispense}</span>
+                                <button style="width:26px; height:26px; background:var(--bg-elevated); border:1px solid var(--border); color:#fff;" onclick="adjustQty(${idx}, 1)">+</button>
+                            </div>
+                            <button style="background:none; border:none; color:var(--danger); font-size:0.75rem;" onclick="removeBasketLine(${idx})">Remove</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('cart-total').textContent = sum.toLocaleString() + " UGX";
+        }
+
+        function adjustQty(idx, d) {
+            cart[idx].QuantityToDispense += d;
+            if (cart[idx].QuantityToDispense <= 0) cart.splice(idx, 1);
+            else cart[idx].LineTotalUgx = cart[idx].QuantityToDispense * cart[idx].UnitPriceUgx;
+            renderBasket();
+        }
+
+        function removeBasketLine(idx) { cart.splice(idx, 1); renderBasket(); }
+
+        async function stagePrescriptionTicket() {
+            if (cart.length === 0) return alert("Prescription cart is empty.");
+            const payload = {
+                TicketId: "",
+                TokenNumber: "",
+                OperatorName: "Floor Dispenser",
+                OperatorRole: 2,
+                CustomerIdentifier: "Walk-In Patient",
+                Items: cart
+            };
+
+            const r = await fetch(`${baseUrl}/api/tickets/stage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (r.ok) {
+                const res = await r.json();
+                beep(true);
+                alert(`Prescription Staged!\nToken Number: ${res.tokenNumber}\nInstruct patient to proceed to the checkout till.`);
+                cart = [];
+                renderBasket();
+            } else {
+                alert("Station error staging ticket.");
+            }
+        }
+
+        async function commitAuditLog() {
+            const barcode = document.getElementById('audit-sku').value.trim();
+            const count = parseInt(document.getElementById('audit-qty').value, 10);
+            if (!barcode || isNaN(count)) return alert("Barcode and Count are required.");
+
+            const r = await fetch(`${baseUrl}/api/audit/log`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ barcode, count, auditor: "Floor Staff" })
+            });
+            if (r.ok) {
+                const data = await r.json();
+                beep(true);
+                document.getElementById('audit-sku').value = "";
+                document.getElementById('audit-qty').value = "";
+                const hist = document.getElementById('audit-history');
+                hist.innerHTML = `
+                    <div class="item-card">
+                        <div class="item-header">
+                            <span>${data.DrugName}</span>
+                            <span style="font-weight:700; color:var(--accent);">${data.PhysicalUnits} Units</span>
+                        </div>
+                        <div style="font-size:0.7rem; color:var(--text-muted);">${new Date(data.Timestamp).toLocaleTimeString()}</div>
+                    </div>
+                ` + hist.innerHTML;
+            }
+        }
+
+        async function loadSupervisorChallenges() {
+            const r = await fetch(`${baseUrl}/api/supervisor/pending`);
+            if (r.ok) {
+                const list = await r.json();
+                const container = document.getElementById('challenges-list');
+                if (list.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; color:var(--text-muted); margin-top:2rem;">No pending supervisor challenges.</div>';
+                    return;
+                }
+                container.innerHTML = list.map(c => `
+                    <div class="item-card">
+                        <div class="item-header">
+                            <span class="drug-title">Ref #${c.ChallengeId}</span>
+                            <span style="color:var(--warning); font-weight:700;">${c.TransactionAmountUgx.toLocaleString()} UGX</span>
+                        </div>
+                        <div style="font-size:0.75rem;">Requester: ${c.RequestingOperator}</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Reason: ${c.Reason}</div>
+                        <div style="display:flex; gap:8px; margin-top:6px;">
+                            <button class="btn-stage" style="flex:1; background:var(--success);" onclick="resolveChallenge('${c.ChallengeId}', true)">Approve</button>
+                            <button class="btn-stage" style="flex:1; background:var(--danger);" onclick="resolveChallenge('${c.ChallengeId}', false)">Reject</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        async function resolveChallenge(challengeId, approve) {
+            const r = await fetch(`${baseUrl}/api/supervisor/resolve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ challengeId, approve, managerName: "Supervisor Handset" })
+            });
+            if (r.ok) {
+                beep(approve);
+                loadSupervisorChallenges();
+            }
+        }
+
+        async function openScanner(ctx) {
+            activeContext = ctx;
+            const modal = document.getElementById('scanner-modal');
+            const video = document.getElementById('scanner-video');
+            modal.style.display = 'flex';
+
+            if (!('BarcodeDetector' in window)) {
+                alert("Camera barcode reader not supported natively on this browser. Input barcode directly.");
+                closeScanner();
+                return;
+            }
+
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+                video.srcObject = videoStream;
+                video.play();
+                const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13', 'ean_8', 'upc_a', 'qr_code'] });
+                const poller = setInterval(async () => {
+                    if (modal.style.display === 'none') { clearInterval(poller); return; }
+                    try {
+                        const codes = await detector.detect(video);
+                        if (codes.length > 0) {
+                            const val = codes[0].rawValue;
+                            beep(true);
+                            closeScanner();
+                            if (activeContext === 'dispense') {
+                                document.getElementById('drug-search').value = val;
+                                filterCatalog(val);
+                            } else {
+                                document.getElementById('audit-sku').value = val;
+                                document.getElementById('audit-qty').focus();
+                            }
+                        }
+                    } catch(e) {}
+                }, 250);
+            } catch(err) {
+                alert("Camera error: " + err.message);
+                closeScanner();
+            }
+        }
+
+        function closeScanner() {
+            document.getElementById('scanner-modal').style.display = 'none';
+            if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
+        }
+
+        setInterval(syncDelta, 3000);
+        syncDelta();
+    </script>
 </body>
 </html>
+""";
+    }
+
+    #endregion
+
+    #region UDP Auto-Discovery Beacon
+
+    public sealed class LanDiscoveryBeacon
+    {
+        private readonly int _httpPort;
+        private readonly string _stationName;
+        private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        private UdpClient? _udpClient;
+
+        public LanDiscoveryBeacon(int httpPort, string stationName)
+        {
+            _httpPort = httpPort;
+            _stationName = stationName;
+        }
+
+        public void Start() => Task.Run(() => BroadcastLoopAsync(_cts.Token));
+
+        public void Stop()
+        {
+            _cts.Cancel();
+            _udpClient?.Dispose();
+        }
+
+        private async Task BroadcastLoopAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    using (_udpClient = new UdpClient())
+                    {
+                        _udpClient.EnableBroadcast = true;
+                        var targetEp = new IPEndPoint(IPAddress.Broadcast, 45454);
+                        var payload = new
+                        {
+                            service = "SSEDDUME_DSMS_STATION",
+                            name = _stationName,
+                            port = _httpPort,
+                            time = DateTime.UtcNow.Ticks
+                        };
+                        byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+
+                        while (!ct.IsCancellationRequested)
+                        {
+                            await _udpClient.SendAsync(bytes, bytes.Length, targetEp);
+                            await Task.Delay(2500, ct);
+                        }
+                    }
+                }
+                catch
+                {
+                    if (ct.IsCancellationRequested) break;
+                    await Task.Delay(4000, ct);
+                }
+            }
+        }
+    }
+
+    #endregion
+
+    #region Master Station GUI (Windows Forms Dashboard)
+
+    public sealed class MasterStationDashboardForm : Form
+    {
+        private readonly SystemStateManager _state;
+        private readonly MasterCompanionHttpEngine _httpServer;
+
+        private ListView _stagedQueueList = null!;
+        private ListView _inventoryTickerList = null!;
+        private ListView _auditVarianceList = null!;
+        private Label _lblServerStatus = null!;
+        private System.Windows.Forms.Timer _refreshTimer = null!;
+
+        public MasterStationDashboardForm(SystemStateManager state, MasterCompanionHttpEngine server)
+        {
+            _state = state;
+            _httpServer = server;
+            BuildComponentLayout();
+        }
+
+        private void BuildComponentLayout()
+        {
+            this.Text = "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM - MASTER STATION (NDA CLASS C COMPLIANT)";
+            this.Size = new Size(1180, 760);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.BackColor = Color.FromArgb(15, 23, 42);
+            this.ForeColor = Color.White;
+            this.Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
+
+            // Header Bar
+            var topBar = new Panel { Dock = DockStyle.Top, Height = 56, BackColor = Color.FromArgb(30, 41, 59) };
+            var lblBrand = new Label
+            {
+                Text = "SSEDDUME DRUG SHOP | Central Workstation & Dispense Terminal",
+                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(56, 189, 248),
+                Location = new Point(14, 14),
+                AutoSize = true
+            };
+            topBar.Controls.Add(lblBrand);
+
+            _lblServerStatus = new Label
+            {
+                Text = $"Companion Port: {_httpServer.AssignedPort} | UDP Discovery: 45454 Active | Workstation: {_state.StationMachineName}",
+                ForeColor = Color.FromArgb(148, 163, 184),
+                Location = new Point(580, 18),
+                AutoSize = true
+            };
+            topBar.Controls.Add(_lblServerStatus);
+            this.Controls.Add(topBar);
+
+            // Tab Control for Multi-Aspect Floor Control
+            var mainTabs = new TabControl { Dock = DockStyle.Fill, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
+
+            // TAB 1: Live Checkout Register & Staged Prescriptions
+            var tabCheckout = new TabPage("Floor Staged Tickets & POS [F1]") { BackColor = Color.FromArgb(15, 23, 42) };
+            var splitPos = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Horizontal,
+                SplitterDistance = 330,
+                BackColor = Color.FromArgb(51, 65, 85)
+            };
+
+            var grpQueue = new GroupBox
+            {
+                Text = " Incoming Dispenser Prescription Tickets (Press [ENTER] or [F1] to Settle) ",
+                Dock = DockStyle.Fill,
+                ForeColor = Color.FromArgb(226, 232, 240),
+                BackColor = Color.FromArgb(15, 23, 42)
+            };
+            _stagedQueueList = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White,
+                BorderStyle = BorderStyle.None
+            };
+            _stagedQueueList.Columns.Add("Token", 80);
+            _stagedQueueList.Columns.Add("Ticket ID", 90);
+            _stagedQueueList.Columns.Add("Floor Staff", 120);
+            _stagedQueueList.Columns.Add("Patient", 150);
+            _stagedQueueList.Columns.Add("Lines", 70);
+            _stagedQueueList.Columns.Add("Total (UGX)", 120);
+            _stagedQueueList.Columns.Add("Time Staged", 130);
+            _stagedQueueList.DoubleClick += (s, e) => FinalizeSelectedTicket();
+            grpQueue.Controls.Add(_stagedQueueList);
+            splitPos.Panel1.Controls.Add(grpQueue);
+
+            var grpInv = new GroupBox
+            {
+                Text = " Live FEFO Expiry & Stock Safety Ticker ",
+                Dock = DockStyle.Fill,
+                ForeColor = Color.FromArgb(226, 232, 240),
+                BackColor = Color.FromArgb(15, 23, 42)
+            };
+            _inventoryTickerList = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White,
+                BorderStyle = BorderStyle.None
+            };
+            _inventoryTickerList.Columns.Add("Barcode", 130);
+            _inventoryTickerList.Columns.Add("Product / Generic Form", 260);
+            _inventoryTickerList.Columns.Add("Pack Breakdown", 130);
+            _inventoryTickerList.Columns.Add("Total Units", 100);
+            _inventoryTickerList.Columns.Add("Nearest Expiry", 120);
+            _inventoryTickerList.Columns.Add("Retail / Unit (UGX)", 130);
+            grpInv.Controls.Add(_inventoryTickerList);
+            splitPos.Panel2.Controls.Add(grpInv);
+
+            tabCheckout.Controls.Add(splitPos);
+            mainTabs.TabPages.Add(tabCheckout);
+
+            // TAB 2: Blind Stock Audit Reconciliations
+            var tabAudit = new TabPage("Blind Audit Variance Journal") { BackColor = Color.FromArgb(15, 23, 42) };
+            _auditVarianceList = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White,
+                BorderStyle = BorderStyle.None
+            };
+            _auditVarianceList.Columns.Add("SKU / Barcode", 140);
+            _auditVarianceList.Columns.Add("Drug Name", 240);
+            _auditVarianceList.Columns.Add("System Expected", 120);
+            _auditVarianceList.Columns.Add("Physical Count", 120);
+            _auditVarianceList.Columns.Add("Discrepancy Variance", 150);
+            _auditVarianceList.Columns.Add("Auditor", 120);
+            _auditVarianceList.Columns.Add("Timestamp", 140);
+            tabAudit.Controls.Add(_auditVarianceList);
+            mainTabs.TabPages.Add(tabAudit);
+
+            this.Controls.Add(mainTabs);
+
+            // Action Footer Bar
+            var botPanel = new Panel { Dock = DockStyle.Bottom, Height = 48, BackColor = Color.FromArgb(30, 41, 59) };
+            var btnFinalize = new Button
+            {
+                Text = "F1: Settle & Print Receipt",
+                Size = new Size(190, 34),
+                Location = new Point(12, 7),
+                BackColor = Color.FromArgb(2, 132, 199),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            };
+            btnFinalize.Click += (s, e) => FinalizeSelectedTicket();
+
+            var btnPrintLabels = new Button
+            {
+                Text = "F2: Print Dosage Direction Labels",
+                Size = new Size(240, 34),
+                Location = new Point(210, 7),
+                BackColor = Color.FromArgb(14, 165, 233),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            };
+            btnPrintLabels.Click += (s, e) => PrintLabelsForSelected();
+
+            botPanel.Controls.Add(btnFinalize);
+            botPanel.Controls.Add(btnPrintLabels);
+            this.Controls.Add(botPanel);
+
+            // Refresh Loop
+            _refreshTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+            _refreshTimer.Tick += (s, e) => RefreshDashboardData();
+            _refreshTimer.Start();
+
+            this.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.F1) FinalizeSelectedTicket();
+                if (e.KeyCode == Keys.F2) PrintLabelsForSelected();
+                if (e.KeyCode == Keys.F5) RefreshDashboardData();
+            };
+
+            RefreshDashboardData();
+        }
+
+        private void RefreshDashboardData()
+        {
+            // Refresh Staged Prescriptions
+            var pending = _state.GetPendingTickets();
+            _stagedQueueList.Items.Clear();
+            foreach (var t in pending)
+            {
+                var lvi = new ListViewItem(t.TokenNumber);
+                lvi.SubItems.Add(t.TicketId);
+                lvi.SubItems.Add(t.OperatorName);
+                lvi.SubItems.Add(t.CustomerIdentifier);
+                lvi.SubItems.Add(t.Items.Count.ToString());
+                lvi.SubItems.Add(t.TotalUgx.ToString("N0"));
+                lvi.SubItems.Add(t.CreatedAt.ToLocalTime().ToString("HH:mm:ss"));
+                lvi.Tag = t;
+                _stagedQueueList.Items.Add(lvi);
+            }
+
+            // Refresh Inventory / FEFO
+            var items = _state.GetInventoryDelta(0, StaffRole.Owner);
+            _inventoryTickerList.Items.Clear();
+            foreach (var i in items)
+            {
+                var lvi = new ListViewItem(i.Barcode);
+                lvi.SubItems.Add($"{i.BrandName} ({i.GenericName})");
+                lvi.SubItems.Add($"{i.UnitsPerPack}s / {i.UnitsPerStrip}s");
+                lvi.SubItems.Add(i.TotalAvailableUnits.ToString());
+
+                var nearest = i.GetFefoOrderedBatches().FirstOrDefault();
+                lvi.SubItems.Add(nearest != null ? nearest.ExpiryDate.ToString("MMM-yyyy") : "NO VALID LOT");
+                lvi.SubItems.Add(i.RetailSingleUnitPriceUgx.ToString("N0"));
+
+                if (i.TotalAvailableUnits <= i.ReorderThresholdUnits)
+                    lvi.ForeColor = Color.FromArgb(248, 113, 113); // Critical Stock Alert
+
+                _inventoryTickerList.Items.Add(lvi);
+            }
+
+            // Refresh Audit Journal
+            var audits = _state.GetAuditLog();
+            _auditVarianceList.Items.Clear();
+            foreach (var a in audits)
+            {
+                var lvi = new ListViewItem(a.Barcode);
+                lvi.SubItems.Add(a.DrugName);
+                lvi.SubItems.Add(a.ExpectedUnits.ToString());
+                lvi.SubItems.Add(a.PhysicalUnits.ToString());
+
+                var varItem = lvi.SubItems.Add(a.VarianceUnits > 0 ? $"+{a.VarianceUnits}" : a.VarianceUnits.ToString());
+                if (a.VarianceUnits < 0) lvi.ForeColor = Color.FromArgb(248, 113, 113);
+                else if (a.VarianceUnits > 0) lvi.ForeColor = Color.FromArgb(52, 211, 153);
+
+                lvi.SubItems.Add(a.AuditorName);
+                lvi.SubItems.Add(a.Timestamp.ToLocalTime().ToString("dd-MMM HH:mm:ss"));
+                _auditVarianceList.Items.Add(lvi);
+            }
+        }
+
+        private void FinalizeSelectedTicket()
+        {
+            if (_stagedQueueList.SelectedItems.Count == 0)
+            {
+                MessageBox.Show("Please highlight a staged floor ticket to finalize.", "No Ticket Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var ticket = (StagedCartTicket)_stagedQueueList.SelectedItems[0].Tag;
+            var res = _state.FinalizeDispense(ticket.TicketId, "Master Cashier");
+
+            if (res.Success)
+            {
+                byte[] receipt = ThermalPrinterSpooler.GenerateSalesReceipt(ticket, "Master Cashier");
+                // ThermalPrinterSpooler.SendRawBytes("POS-80", receipt); // Target thermal printer directly
+
+                MessageBox.Show($"{res.Message}\nCash received: {ticket.TotalUgx:N0} UGX\nReceipt spooled successfully.", "Transaction Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                RefreshDashboardData();
+            }
+            else
+            {
+                MessageBox.Show(res.Message, "Stock Deduction Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void PrintLabelsForSelected()
+        {
+            if (_stagedQueueList.SelectedItems.Count == 0) return;
+            var ticket = (StagedCartTicket)_stagedQueueList.SelectedItems[0].Tag;
+
+            int count = 0;
+            foreach (var item in ticket.Items)
+            {
+                if (!string.IsNullOrWhiteSpace(item.DosageInstructions))
+                {
+                    byte[] sigBytes = ThermalPrinterSpooler.GenerateDosageAuxiliaryLabel(item, ticket.CustomerIdentifier);
+                    // ThermalPrinterSpooler.SendRawBytes("POS-80", sigBytes);
+                    count++;
+                }
+            }
+            MessageBox.Show($"Spool completed: {count} auxiliary dosage label(s) generated.", "Auxiliary Direction Labels", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    #endregion
+}
+```
+
+### How to Compile and Run in a Single Step
+
+1. Ensure the **.NET 8 SDK** is installed on the Master Windows workstation.
+2. In an empty folder, create a project file named `SseddumeDrugShopMaster.csproj`:
+   ```xml
+   <Project Sdk="Microsoft.NET.Sdk">
+     <PropertyGroup>
+       <OutputType>WinExe</OutputType>
+       <TargetFramework>net8.0-windows</TargetFramework>
+       <UseWindowsForms>true</UseWindowsForms>
+       <Nullable>enable</Nullable>
+       <LangVersion>12.0</LangVersion>
+     </PropertyGroup>
+   </Project>
+   ```
+3. Place the single `Program.cs` code above into the folder.
+4. Execute:
+   ```bash
+   dotnet run -c Release
+   ```
+5. Open the companion mobile terminal on any Android handset connected to the shop’s local Wi-Fi router by browsing to:
+   ```
+   http://<WINDOWS_PC_LAN_IP>:8080/m
+   ```

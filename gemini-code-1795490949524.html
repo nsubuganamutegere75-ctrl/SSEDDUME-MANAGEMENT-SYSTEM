@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</title>
+  <style>
+    :root {
+      --bg: #eef2f6;
+      --surface: #ffffff;
+      --surface-2: #f8fafc;
+      --primary: #0f766e;
+      --primary-dark: #115e59;
+      --primary-soft: #ccfbf1;
+      --accent: #0369a1;
+      --accent-soft: #e0f2fe;
+      --danger: #b91c1c;
+      --danger-soft: #fee2e2;
+      --warn: #b45309;
+      --warn-soft: #fef3c7;
+      --ok: #15803d;
+      --ok-soft: #dcfce7;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --radius: 14px;
+      --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 20px rgba(15, 23, 42, 0.04);
+    }
+    * { box-sizing: border-box; font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 86px; -webkit-font-smoothing: antialiased; }
+
+    header {
+      position: sticky; top: 0; z-index: 40;
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      color: #fff; padding: 12px 16px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      box-shadow: 0 2px 12px rgba(15, 118, 110, 0.24);
+    }
+    .brand-title { font-size: 15.5px; font-weight: 800; letter-spacing: -0.01em; }
+    .brand-sub { font-size: 11.5px; opacity: 0.92; margin-top: 2px; }
+    .user-pill {
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.26);
+      padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      white-space: nowrap;
+    }
+
+    nav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 45;
+      display: flex; justify-content: space-around; gap: 4px;
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+      background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
+      border-top: 1px solid var(--border); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06);
+    }
+    nav button {
+      flex: 1; border: none; padding: 7px 6px; min-height: 46px;
+      border-radius: 10px; background: transparent; color: var(--muted);
+      cursor: pointer; font-weight: 600; font-size: 11.5px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+      transition: all 0.14s ease;
+    }
+    nav button.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 700; }
+
+    main { padding: 14px; max-width: 1120px; margin: 0 auto; }
+    .grid-2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 12px; align-items: start; }
+    @media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
+    .kpi-label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi-val { font-size: 18px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+    .card h3 { margin: 0 0 10px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+
+    .alert-strip {
+      border-radius: 12px; padding: 10px 14px; margin-bottom: 12px;
+      font-size: 12.5px; line-height: 1.45; border: 1px solid transparent;
+    }
+    .alert-warn { background: var(--warn-soft); border-color: #fcd34d; color: #78350f; }
+    .alert-danger { background: var(--danger-soft); border-color: #fca5a5; color: #7f1d1d; }
+
+    .win-banner {
+      background: linear-gradient(135deg, #f0f9ff, #ecfdf5);
+      border: 1px solid #bae6fd; border-radius: 12px; padding: 12px 14px;
+      margin-bottom: 12px; display: flex; flex-wrap: wrap; justify-content: space-between;
+      align-items: center; gap: 10px;
+    }
+
+    input, select, textarea, button {
+      min-height: 42px; padding: 8px 12px; border-radius: 10px;
+      border: 1px solid #cbd5e1; font-size: 14px; background: #fff; color: var(--text);
+      transition: border-color 0.14s ease, box-shadow 0.14s ease;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+    }
+    button { cursor: pointer; font-weight: 600; }
+    button:active { transform: scale(0.985); }
+    button.btn-primary { background: var(--primary); color: #fff; border: 1px solid var(--primary); }
+    button.btn-primary:hover { background: var(--primary-dark); }
+    button.btn-accent { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+    button.btn-danger { background: var(--danger); color: #fff; border: 1px solid var(--danger); }
+    button.btn-secondary { background: #1e293b; color: #fff; border: 1px solid #1e293b; }
+    button.btn-ghost {
+      background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+      min-height: 34px; padding: 5px 10px; font-size: 12px; border-radius: 8px;
+    }
+    button.chip {
+      min-height: 32px; padding: 4px 11px; font-size: 12px; border-radius: 999px;
+      background: var(--primary-soft); color: var(--primary-dark); border: 1px solid #99f6e4;
+    }
+
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+    th {
+      background: var(--surface-2); color: var(--muted); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.04em; padding: 10px;
+      border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap;
+    }
+    td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; text-align: left; vertical-align: middle; font-variant-numeric: tabular-nums; }
+    tr:last-child td { border-bottom: none; }
+
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .ok { background: var(--ok-soft); color: var(--ok); }
+    .bad { background: var(--danger-soft); color: var(--danger); }
+    .warn { background: var(--warn-soft); color: var(--warn); }
+    .info { background: var(--accent-soft); color: var(--accent); }
+
+    .cart-item {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--surface-2); margin-bottom: 8px;
+    }
+
+    .lab-seal {
+      text-align: center; font-size: 11px; color: var(--muted);
+      letter-spacing: 0.08em; font-weight: 700; margin: 16px 0 6px;
+    }
+
+    #toast {
+      position: fixed; bottom: 78px; left: 50%; transform: translateX(-50%) translateY(16px);
+      background: #0f172a; color: #fff; padding: 10px 16px; border-radius: 999px;
+      font-size: 13px; font-weight: 600; opacity: 0; pointer-events: none;
+      transition: all 0.2s ease; z-index: 1000; box-shadow: 0 8px 24px rgba(0,0,0,0.24);
+      max-width: 92vw; text-align: center;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.86);
+      z-index: 999; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-card {
+      background: #fff; color: var(--text); padding: 16px; border-radius: 14px;
+      width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+    #camBox { background: #0f172a; color: #fff; border: 1px solid #1e293b; }
+    .cam-frame { position: relative; border-radius: 10px; overflow: hidden; background: #000; }
+    #camVideo { width: 100%; max-height: 310px; display: block; object-fit: cover; }
+    .reticle {
+      position: absolute; inset: 18% 12%; border: 2px solid #2dd4bf;
+      border-radius: 10px; box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.36); pointer-events: none;
+    }
+    @media print {
+      header, nav, .lab-seal, .alert-strip, #toast, #camModal, #receiptModal .no-print { display: none !important; }
+      body { background: #fff; padding: 0; }
+      .modal-backdrop { position: static; background: none; display: block !important; padding: 0; }
+      .modal-card { box-shadow: none; max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="brand-title" id="shopTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
+    <div class="brand-sub" id="shopMeta">NDA: N/A &bull; LG: N/A</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <span class="user-pill" id="activeUser">Locked</span>
+    <button class="btn-ghost" onclick="logout()">Lock</button>
+  </div>
+</header>
+
+<div id="loginBox" class="card" style="max-width:440px;margin:28px auto;">
+  <h3>Staff Sign In</h3>
+  <div class="row">
+    <select id="loginStaff" style="flex:1;min-width:170px;" onkeydown="if(event.key==='Enter')loginWithPin()"></select>
+    <input id="loginPin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" style="width:110px;" onkeydown="if(event.key==='Enter')loginWithPin()" />
+  </div>
+  <div class="row">
+    <button class="btn-primary" onclick="loginWithPin()" style="flex:1;">Unlock with PIN</button>
+    <button class="btn-secondary" onclick="loginWithFingerprint()" id="fpLoginBtn" style="flex:1;">Fingerprint</button>
+  </div>
+  <div id="lockoutNotice" style="color:var(--danger);font-size:13px;font-weight:700;"></div>
+  <small style="color:var(--muted);display:block;line-height:1.45;">
+    Seed Owner PIN: <b>1234</b> (forced change on first sign-in). 5 wrong attempts lock for 5 minutes.
+  </small>
+  <div class="lab-seal">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
+</div>
+
+<div id="appShell" style="display:none;">
+  <main id="view"></main>
+  <div class="lab-seal">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
+  <nav id="tabs"></nav>
+</div>
+
+<div id="toast"></div>
+
+<div id="camModal" class="modal-backdrop">
+  <div id="camBox" class="modal-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <strong id="camTitle">Scan Barcode / QR</strong>
+      <button class="btn-ghost" onclick="stopCameraScan()">Cancel</button>
+    </div>
+    <div class="cam-frame">
+      <video id="camVideo" playsinline autoplay muted></video>
+      <div class="reticle"></div>
+    </div>
+    <div id="camStatus" style="font-size:12px;color:#94a3b8;margin-top:10px;">Point camera at medicine barcode or Windows QR...</div>
+  </div>
+</div>
+
+<div id="receiptModal" class="modal-backdrop">
+  <div class="modal-card" id="receiptContent"></div>
+</div>
+
+<script>
+const DB_KEY = "sseddume_dsms_seed_v2";
+const SNAP_KEY = "sseddume_dsms_seed_snap_v2";
+const LOCKOUT_MAX = 5;
+const LOCKOUT_MS = 5 * 60 * 1000;
+
+function money(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return 0;
+  return Math.round((num + Number.EPSILON) * 100) / 100;
+}
+
+function localDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function addDaysLocalStr(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return localDateStr(d);
+}
+
+function daysUntilDateStr(dateStr) {
+  const todayMid = new Date(`${localDateStr()}T00:00:00`).getTime();
+  const targetMid = new Date(`${dateStr}T00:00:00`).getTime();
+  return Math.round((targetMid - todayMid) / 86400000);
+}
+
+function nowIso() { return new Date().toISOString(); }
+
+function esc(str) {
+  return String(str ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+function computeChecksum(obj) {
+  const str = JSON.stringify(obj);
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 ^= ch;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 = Math.imul(h2 ^ ch, 0x27d4eb2d);
+  }
+  return ((h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0")).toUpperCase();
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
+}
+
+function defaultState() {
+  return {
+    shop: {
+      name: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
+      nda: "",
+      lg: "",
+      mustChangeOwnerPin: true,
+      autoLockOnHide: true
+    },
+    windowsBridge: {
+      paired: false,
+      hostName: "",
+      endpointUrl: "",
+      tokenOrCode: "",
+      pairedAt: ""
+    },
+    meta: {
+      lastEventMs: Date.now(),
+      lastExportAt: "",
+      seq: 0
+    },
+    staff: [
+      { id: "U-OWNER", name: "Owner", role: "Owner", regNo: "OWNER", pin: "1234", fpEnabled: false, fpCredId: "", active: true }
+    ],
+    auth: { failedAttempts: 0, lockedUntil: 0 },
+    medicines: [],
+    batches: [],
+    sales: [],
+    tempLogs: [],
+    audit: []
+  };
+}
+
+let db = JSON.parse(localStorage.getItem(DB_KEY) || "null") || defaultState();
+db.windowsBridge = { ...defaultState().windowsBridge, ...(db.windowsBridge || {}) };
+db.meta = { ...defaultState().meta, ...(db.meta || {}) };
+
+let session = null;
+let currentTab = "sell";
+let cart = [];
+let activeStream = null;
+let scanRafId = null;
+let cancelActiveScan = null;
+
+function checkClockDrift() {
+  const now = Date.now();
+  if (db.meta?.lastEventMs && now < db.meta.lastEventMs - 60000) {
+    addAudit("CLOCK_DRIFT", `System clock appeared behind last recorded state (${new Date(db.meta.lastEventMs).toISOString()})`);
+  }
+  db.meta.lastEventMs = Math.max(now, db.meta?.lastEventMs || 0);
+}
+
+function saveDb() {
+  try {
+    checkClockDrift();
+    const raw = JSON.stringify(db);
+    localStorage.setItem(DB_KEY, raw);
+    localStorage.setItem(SNAP_KEY, JSON.stringify({
+      savedAt: nowIso(),
+      checksum: computeChecksum(db),
+      data: db
+    }));
+    renderHeader();
+  } catch (err) {
+    alert("Storage warning: Export a JSON backup immediately. (" + (err?.message || err) + ")");
+  }
+}
+
+function addAudit(action, detail) {
+  db.meta.seq = (db.meta.seq || 0) + 1;
+  db.audit.unshift({
+    seq: db.meta.seq,
+    id: "A-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+    time: nowIso(),
+    user: session ? `${session.name} (${session.role})` : "System",
+    action,
+    detail
+  });
+}
+
+function renderHeader() {
+  document.getElementById("shopTitle").textContent = db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
+  const winTag = db.windowsBridge?.paired ? " • WIN PAIRED" : " • WIN READY";
+  document.getElementById("shopMeta").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"}${winTag}`;
+  document.getElementById("activeUser").textContent = session ? `${session.name} • ${session.role}` : "Locked";
+}
+
+function populateLoginStaff() {
+  const sel = document.getElementById("loginStaff");
+  const activeStaff = db.staff.filter(s => s.active !== false);
+  sel.innerHTML = activeStaff.map(s =>
+    `<option value="${esc(s.id)}">${esc(s.name)} — ${esc(s.role)}${s.fpEnabled ? " [FP]" : ""}</option>`
+  ).join("");
+  updateLockoutBanner();
+}
+
+function updateLockoutBanner() {
+  const el = document.getElementById("lockoutNotice");
+  const rem = (db.auth?.lockedUntil || 0) - Date.now();
+  if (rem > 0) {
+    el.textContent = `Locked out due to 5 wrong PINs. Try again in ${Math.ceil(rem / 1000)}s.`;
+    return true;
+  }
+  el.textContent = "";
+  return false;
+}
+
+function recordFailedAuth() {
+  db.auth = db.auth || { failedAttempts: 0, lockedUntil: 0 };
+  db.auth.failedAttempts += 1;
+  if (db.auth.failedAttempts >= LOCKOUT_MAX) {
+    db.auth.lockedUntil = Date.now() + LOCKOUT_MS;
+    db.auth.failedAttempts = 0;
+    addAudit("LOCKOUT", "5 failed authentication attempts triggered 5-minute lockout");
+  }
+  saveDb();
+  updateLockoutBanner();
+}
+
+function completeLogin(user, method) {
+  db.auth = { failedAttempts: 0, lockedUntil: 0 };
+  session = { id: user.id, name: user.name, role: user.role, regNo: user.regNo };
+  cart = [];
+  addAudit("LOGIN", `${user.name} (${user.role}) signed in via ${method}`);
+  saveDb();
+
+  if (user.role === "Owner" && (db.shop.mustChangeOwnerPin || user.pin === "1234")) {
+    let newPin = "";
+    while (!newPin || newPin.length < 4 || newPin === "1234") {
+      newPin = prompt("First login security: Set your new Owner PIN (at least 4 digits, not 1234):");
+      if (newPin === null) {
+        session = null;
+        document.getElementById("loginPin").value = "";
+        return;
+      }
+      newPin = newPin.trim();
+    }
+    const target = db.staff.find(s => s.id === user.id);
+    if (target) target.pin = newPin;
+    db.shop.mustChangeOwnerPin = false;
+    addAudit("PIN_CHANGE", "Owner changed default PIN on first login");
+    saveDb();
+    toast("Owner PIN updated");
+  }
+
+  document.getElementById("loginPin").value = "";
+  document.getElementById("loginBox").style.display = "none";
+  document.getElementById("appShell").style.display = "block";
+  renderTabs();
+  renderView();
+}
+
+function loginWithPin() {
+  if (updateLockoutBanner()) return;
+  const staffId = document.getElementById("loginStaff").value;
+  const pin = document.getElementById("loginPin").value.trim();
+  const user = db.staff.find(s => s.id === staffId && s.active !== false);
+  if (!user || !pin || user.pin !== pin) {
+    recordFailedAuth();
+    return alert("Invalid PIN.");
+  }
+  completeLogin(user, "PIN");
+}
+
+function stopCameraScan() {
+  if (typeof cancelActiveScan === "function") {
+    const fn = cancelActiveScan;
+    cancelActiveScan = null;
+    fn();
+  }
+  if (scanRafId) { cancelAnimationFrame(scanRafId); scanRafId = null; }
+  if (activeStream) {
+    activeStream.getTracks().forEach(t => t.stop());
+    activeStream = null;
+  }
+  document.getElementById("camModal").style.display = "none";
+}
+
+async function scanBarcodeWithCamera(labelText) {
+  stopCameraScan();
+
+  const mlKit = window.Capacitor?.Plugins?.BarcodeScanner;
+  if (mlKit && typeof mlKit.scan === "function") {
+    const perms = await mlKit.checkPermissions?.();
+    if (perms?.camera !== "granted") {
+      await mlKit.requestPermissions?.();
+    }
+    const res = await mlKit.scan();
+    const rawValue = res?.barcodes?.[0]?.rawValue || res?.barcodes?.[0]?.displayValue;
+    if (rawValue) return String(rawValue).trim();
+    throw new Error("No barcode detected.");
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const manual = prompt(`${labelText}\nCamera unavailable. Enter code or URL manually:`);
+    return manual ? manual.trim() : null;
+  }
+
+  const modal = document.getElementById("camModal");
+  const video = document.getElementById("camVideo");
+  const statusEl = document.getElementById("camStatus");
+  document.getElementById("camTitle").textContent = labelText;
+  statusEl.textContent = "Starting camera...";
+  modal.style.display = "flex";
+
+  try {
+    activeStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
+    });
+    video.srcObject = activeStream;
+    await video.play();
+  } catch (err) {
+    stopCameraScan();
+    throw err;
+  }
+
+  if (!("BarcodeDetector" in window)) {
+    const manual = prompt("BarcodeDetector unsupported here. Enter code or URL manually:");
+    stopCameraScan();
+    return manual ? manual.trim() : null;
+  }
+
+  const detector = new BarcodeDetector({
+    formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code", "data_matrix"]
+  });
+  statusEl.textContent = "Align code inside camera frame...";
+
+  return await new Promise((resolve, reject) => {
+    let settled = false;
+    cancelActiveScan = () => {
+      if (!settled) { settled = true; reject(new Error("Scan cancelled.")); }
+    };
+    const tick = async () => {
+      if (settled) return;
+      try {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          const codes = await detector.detect(video);
+          if (codes && codes.length > 0 && codes[0].rawValue) {
+            settled = true;
+            cancelActiveScan = null;
+            const code = String(codes[0].rawValue).trim();
+            stopCameraScan();
+            resolve(code);
+            return;
+          }
+        }
+      } catch (_) {}
+      scanRafId = requestAnimationFrame(tick);
+    };
+    scanRafId = requestAnimationFrame(tick);
+  });
+}
+
+function randomChallenge() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return arr;
+}
+function bufToBase64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function base64ToBuf(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function verifyDeviceBiometric(reasonText, expectedCredId = "") {
+  const capBio = window.Capacitor?.Plugins?.BiometricAuth;
+  if (capBio && typeof capBio.authenticate === "function") {
+    await capBio.authenticate({
+      reason: reasonText,
+      cancelTitle: "Use PIN",
+      allowDeviceCredential: false,
+      androidTitle: "Fingerprint Verification",
+      androidSubtitle: reasonText
+    });
+    return true;
+  }
+  if (window.PublicKeyCredential && expectedCredId) {
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: randomChallenge(),
+        allowCredentials: [{ id: base64ToBuf(expectedCredId), type: "public-key", transports: ["internal"] }],
+        userVerification: "required",
+        timeout: 60000
+      }
+    });
+    return Boolean(assertion);
+  }
+  throw new Error("Biometric hardware or enrolled credential unavailable.");
+}
+
+async function enrollFingerprintForStaff(staffId) {
+  const user = db.staff.find(s => s.id === staffId);
+  if (!user) return;
+  try {
+    const capBio = window.Capacitor?.Plugins?.BiometricAuth;
+    if (capBio && typeof capBio.authenticate === "function") {
+      await capBio.authenticate({ reason: `Enroll fingerprint for ${user.name}`, cancelTitle: "Cancel", allowDeviceCredential: false });
+      user.fpEnabled = true;
+      user.fpCredId = "NATIVE_ANDROID_BIO";
+    } else if (window.PublicKeyCredential) {
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge: randomChallenge(),
+          rp: { name: db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM" },
+          user: { id: new TextEncoder().encode(user.id), name: user.name, displayName: `${user.name} (${user.role})` },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+          timeout: 60000
+        }
+      });
+      user.fpEnabled = true;
+      user.fpCredId = bufToBase64(cred.rawId);
+    } else {
+      return alert("Fingerprint sensor not available on this device.");
+    }
+    addAudit("FP_ENROLL", `Fingerprint enabled for ${user.name} (${user.role})`);
+    saveDb();
+    populateLoginStaff();
+    renderView();
+    toast(`Fingerprint enrolled for ${user.name}`);
+  } catch (err) {
+    alert("Fingerprint enrollment cancelled or failed: " + (err?.message || err));
+  }
+}
+
+function disableFingerprintForStaff(staffId) {
+  const user = db.staff.find(s => s.id === staffId);
+  if (!user) return;
+  user.fpEnabled = false;
+  user.fpCredId = "";
+  addAudit("FP_DISABLE", `Fingerprint disabled for ${user.name} (${user.role})`);
+  saveDb();
+  populateLoginStaff();
+  renderView();
+  toast(`Fingerprint disabled for ${user.name}`);
+}
+
+async function loginWithFingerprint() {
+  if (updateLockoutBanner()) return;
+  const staffId = document.getElementById("loginStaff").value;
+  const user = db.staff.find(s => s.id === staffId && s.active !== false);
+  if (!user) return;
+  if (!user.fpEnabled) return alert("Fingerprint is not enrolled for this staff member.");
+  try {
+    const ok = await verifyDeviceBiometric(`Sign in as ${user.name} (${user.role})`, user.fpCredId);
+    if (ok) completeLogin(user, "FINGERPRINT");
+  } catch (err) {
+    recordFailedAuth();
+    alert("Fingerprint verification failed: " + (err?.message || err));
+  }
+}
+
+async function authorizeSupervisor(actionLabel) {
+  const supervisors = db.staff.filter(s => s.active !== false && (s.role === "Owner" || s.role === "In-Charge"));
+  const fpSupervisor = supervisors.find(s => s.fpEnabled);
+  if (fpSupervisor) {
+    const useFp = confirm(`${actionLabel}\n\nPress OK for Supervisor Fingerprint (${fpSupervisor.name}), or Cancel for Supervisor PIN.`);
+    if (useFp) {
+      try {
+        const ok = await verifyDeviceBiometric(actionLabel, fpSupervisor.fpCredId);
+        if (ok) return fpSupervisor;
+      } catch (_) {
+        alert("Fingerprint failed, falling back to PIN.");
+      }
+    }
+  }
+  const pin = prompt(`${actionLabel}\nEnter In-Charge or Owner PIN:`);
+  if (!pin) return null;
+  const matched = supervisors.find(s => s.pin === pin.trim());
+  if (!matched) { alert("Invalid In-Charge/Owner PIN."); return null; }
+  return matched;
+}
+
+function logout() {
+  stopCameraScan();
+  if (session) addAudit("LOGOUT", `${session.name} locked screen`);
+  session = null;
+  cart = [];
+  saveDb();
+  populateLoginStaff();
+  document.getElementById("appShell").style.display = "none";
+  document.getElementById("loginBox").style.display = "block";
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && session && db.shop?.autoLockOnHide) {
+    logout();
+  }
+});
+
+function renderTabs() {
+  const allTabs = [
+    { id: "sell", icon: "💊", label: "Sell", roles: ["Dispenser", "In-Charge", "Owner"] },
+    { id: "grn", icon: "📦", label: "Stock", roles: ["In-Charge", "Owner"] },
+    { id: "meds", icon: "📋", label: "Meds", roles: ["In-Charge", "Owner"] },
+    { id: "reports", icon: "📊", label: "Reports", roles: ["In-Charge", "Owner"] },
+    { id: "admin", icon: "🛡️", label: "Admin", roles: ["Owner"] }
+  ];
+  const allowed = allTabs.filter(t => t.roles.includes(session.role));
+  if (!allowed.some(t => t.id === currentTab)) currentTab = allowed[0].id;
+  const nav = document.getElementById("tabs");
+  nav.innerHTML = "";
+  allowed.forEach(t => {
+    const b = document.createElement("button");
+    b.innerHTML = `<span style="font-size:15px;">${t.icon}</span><span>${esc(t.label)}</span>`;
+    b.className = currentTab === t.id ? "active" : "";
+    b.onclick = () => { currentTab = t.id; renderTabs(); renderView(); };
+    nav.appendChild(b);
+  });
+}
+
+function batchStatus(b) {
+  if (b.quarantined) return "QUARANTINED";
+  if (b.expiry <= localDateStr()) return "EXPIRED";
+  if (b.qty <= 0) return "DEPLETED";
+  return "ACTIVE";
+}
+
+function isNearExpiry(b) {
+  return batchStatus(b) === "ACTIVE" && b.expiry <= addDaysLocalStr(30);
+}
+
+function isCriticalExpiry(b) {
+  return batchStatus(b) === "ACTIVE" && b.expiry <= addDaysLocalStr(7);
+}
+
+function medAvailableStock(medId) {
+  return db.batches.filter(b => b.medId === medId && batchStatus(b) === "ACTIVE").reduce((s, b) => s + b.qty, 0);
+}
+
+function bumpQty(inputId, addVal) {
+  const el = document.getElementById(inputId);
+  if (!el) return;
+  const cur = parseInt(el.value || "0", 10) || 0;
+  el.value = Math.max(1, cur + addVal);
+}
+
+function renderMitigationAlerts() {
+  const notes = [];
+  const critBatches = db.batches.filter(isCriticalExpiry);
+  if (critBatches.length) {
+    notes.push(`<div class="alert-strip alert-danger"><strong>Critical Expiry Alert (≤ 7 days):</strong> ${critBatches.length} active batch(es) expire within 7 days. Dispense first via FEFO or quarantine if unsuitable.</div>`);
+  }
+  const lowMeds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && medAvailableStock(m.id) <= (m.reorder_level || 0));
+  if (lowMeds.length) {
+    notes.push(`<div class="alert-strip alert-warn"><strong>Low Stock Reorder Alert:</strong> ${lowMeds.length} medicine(s) at or below reorder level (${lowMeds.slice(0, 4).map(m => esc(m.generic_name)).join(", ")}${lowMeds.length > 4 ? "..." : ""}).</div>`);
+  }
+  const lastExp = db.meta?.lastExportAt ? new Date(db.meta.lastExportAt).getTime() : 0;
+  const hasActivity = db.sales.length > 0 || db.batches.length > 0;
+  if (hasActivity && (!lastExp || Date.now() - lastExp > 24 * 3600 * 1000)) {
+    notes.push(`<div class="alert-strip alert-warn"><strong>Backup Reminder:</strong> Export a verified JSON or Windows Pack backup off the device so data survives storage resets.</div>`);
+  }
+  return notes.join("");
+}
+
+function renderKpis() {
+  const validSales = db.sales.filter(s => !s.voided);
+  const cashTotal = money(validSales.filter(s => s.payMethod === "CASH").reduce((a, b) => a + money(b.total), 0));
+  const mmTotal = money(validSales.filter(s => s.payMethod === "MOBILE_MONEY").reduce((a, b) => a + money(b.total), 0));
+  const nearExp = db.batches.filter(isNearExpiry).length;
+  const blockedBatches = db.batches.filter(b => {
+    const st = batchStatus(b);
+    return st === "EXPIRED" || st === "QUARANTINED";
+  }).length;
+
+  return `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">Cash Sales</div><div class="kpi-val">${cashTotal.toFixed(2)}</div></div>
+      <div class="kpi"><div class="kpi-label">Mobile Money</div><div class="kpi-val">${mmTotal.toFixed(2)}</div></div>
+      <div class="kpi"><div class="kpi-label">Expiring ≤ 30d</div><div class="kpi-val" style="color:${nearExp ? "var(--warn)" : "inherit"};">${nearExp}</div></div>
+      <div class="kpi"><div class="kpi-label">Exp / Quarantined</div><div class="kpi-val" style="color:${blockedBatches ? "var(--danger)" : "inherit"};">${blockedBatches}</div></div>
+    </div>
+  `;
+}
+
+function renderWindowsIncentiveCard() {
+  const wb = db.windowsBridge || {};
+  const hasHttpUrl = /^https?:\/\//i.test(wb.endpointUrl || "");
+  return `
+    <div class="win-banner">
+      <div style="max-width:640px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="badge info">WINDOWS APP INCENTIVE</span>
+          <strong>Unlock Windows Desktop Sync &amp; Pairing After Scanning</strong>
+        </div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.45;">
+          Scan a Windows host QR code (<code>SSEDDUME-WIN|Host|http://PC-IP:8080|TOKEN</code>) or export a checksum-verified Windows pairing bundle to link this seed Android app with a Windows desktop station.
+          ${wb.paired ? `<br><span class="badge ok" style="margin-top:4px;">PAIRED: ${esc(wb.hostName || "Windows PC")} (${esc(wb.endpointUrl || "Local Bridge")})</span>` : ""}
+        </div>
+      </div>
+      <div class="row" style="margin:0;">
+        <button class="btn-accent" onclick="scanWindowsPairingQr()">Scan Windows QR</button>
+        ${hasHttpUrl ? `<button class="btn-primary" onclick="openPairedWindowsApp()">Open Windows App</button>` : ""}
+        <button class="btn-ghost" onclick="exportWindowsBridgeBundle()">Export Win Pack</button>
+      </div>
+    </div>
+  `;
+}
+
+function openPairedWindowsApp() {
+  const url = db.windowsBridge?.endpointUrl || "";
+  if (!/^https?:\/\//i.test(url)) return alert("No valid Windows HTTP/HTTPS host URL paired yet.");
+  window.open(url, "_blank", "noopener");
+}
+
+function applyWindowsPairingPayload(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return false;
+  let hostName = "Windows Desktop";
+  let endpointUrl = "";
+  let tokenOrCode = text;
+
+  if (text.startsWith("SSEDDUME-WIN|")) {
+    const parts = text.split("|");
+    hostName = (parts[1] || "Windows Desktop").trim();
+    endpointUrl = (parts[2] || "").trim();
+    tokenOrCode = (parts[3] || text).trim();
+  } else if (/^https?:\/\//i.test(text)) {
+    endpointUrl = text;
+    try { hostName = new URL(text).hostname; } catch (_) {}
+  }
+
+  db.windowsBridge = {
+    paired: true,
+    hostName,
+    endpointUrl,
+    tokenOrCode,
+    pairedAt: nowIso()
+  };
+  addAudit("WIN_PAIR", `Paired Android seed with Windows host "${hostName}" (${endpointUrl || "code-only"})`);
+  saveDb();
+  renderView();
+  toast(`Windows linked: ${hostName}`);
+  return true;
+}
+
+function unpairWindowsBridge() {
+  db.windowsBridge = defaultState().windowsBridge;
+  addAudit("WIN_UNPAIR", "Unpaired Windows desktop host");
+  saveDb();
+  renderView();
+  toast("Windows host unpaired");
+}
+
+async function scanWindowsPairingQr() {
+  try {
+    const code = await scanBarcodeWithCamera("Scan Windows Desktop Pairing QR");
+    if (!code) return;
+    if (!applyWindowsPairingPayload(code)) {
+      alert("Unrecognized Windows pairing code.");
+    }
+  } catch (err) {
+    if (!String(err?.message || "").includes("cancelled")) alert(err?.message || err);
+  }
+}
+
+function exportWindowsBridgeBundle() {
+  const snapshotCopy = JSON.parse(JSON.stringify(db));
+  const payload = {
+    system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
+    incentive: "Windows Desktop Companion & Sync Bundle",
+    generatedAt: nowIso(),
+    checksum: computeChecksum(snapshotCopy),
+    shop: snapshotCopy.shop,
+    windowsBridge: snapshotCopy.windowsBridge,
+    counts: {
+      medicines: snapshotCopy.medicines.length,
+      batches: snapshotCopy.batches.length,
+      sales: snapshotCopy.sales.length,
+      audit: snapshotCopy.audit.length
+    },
+    snapshot: snapshotCopy
+  };
+  db.meta.lastExportAt = nowIso();
+  addAudit("WIN_BUNDLE", `Exported verified Windows bundle [CHK:${payload.checksum}]`);
+  saveDb();
+  renderView();
+  downloadBlob(JSON.stringify(payload, null, 2), `sseddume-windows-bundle-${localDateStr()}.json`, "application/json");
+  toast("Verified Windows bundle exported");
+}
+
+function renderView() {
+  const v = document.getElementById("view");
+  if (currentTab === "sell") return renderSell(v);
+  if (currentTab === "grn") return renderGrn(v);
+  if (currentTab === "meds") return renderMeds(v);
+  if (currentTab === "reports") return renderReports(v);
+  if (currentTab === "admin") return renderAdmin(v);
+}
+
+function renderSell(v) {
+  const usableMeds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED");
+  const medOptions = usableMeds.map(m => {
+    const avail = medAvailableStock(m.id);
+    const lowFlag = avail <= (m.reorder_level || 0) ? " [LOW]" : "";
+    const shortBatch = db.batches
+      .filter(b => b.medId === m.id && isNearExpiry(b))
+      .sort((a, b) => a.expiry.localeCompare(b.expiry))[0];
+    const expFlag = shortBatch ? ` [EXP ${daysUntilDateStr(shortBatch.expiry)}d]` : "";
+    return `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${avail} ${esc(m.base_unit)}${lowFlag}${expFlag}</option>`;
+  }).join("");
+
+  const cartHtml = cart.length
+    ? cart.map((item, idx) => `
+        <div class="cart-item">
+          <div>
+            <strong>${esc(item.medName)}</strong> &times; ${item.qty} ${esc(item.baseUnit)} @ ${money(item.unitPrice).toFixed(2)}
+            ${item.dosage ? `<div style="font-size:12px;color:var(--muted);">Sig: ${esc(item.dosage)}</div>` : ""}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <strong>${money(item.qty * item.unitPrice).toFixed(2)}</strong>
+            <button class="btn-ghost" onclick="removeCartItem(${idx})">✕</button>
+          </div>
+        </div>
+      `).join("")
+    : `<p style="color:var(--muted);font-size:13px;margin:6px 0 12px;">Basket is empty. Add medicines to build a receipt.</p>`;
+
+  const cartTotal = money(cart.reduce((sum, i) => sum + money(i.qty * i.unitPrice), 0));
+
+  const saleRows = db.sales.slice(0, 25).map(s => `
+    <tr>
+      <td>${esc(s.time.slice(0, 16).replace("T", " "))}</td>
+      <td>
+        <button class="btn-ghost" onclick="openReceipt('${esc(s.receiptId || s.id)}')">${esc(s.receiptId || s.id)}</button>
+        <div style="margin-top:3px;">${esc(s.medName)}</div>
+        ${s.dosage ? `<small style="color:var(--muted);">Sig: ${esc(s.dosage)}</small>` : ""}
+      </td>
+      <td>${esc(s.batchNo)}</td>
+      <td>${s.qty}</td>
+      <td>${money(s.total).toFixed(2)} <span class="badge ok">${esc(s.payMethod)}</span>${s.payRef ? `<br><small style="color:var(--muted);">Ref: ${esc(s.payRef)}</small>` : ""}</td>
+      <td>${esc(s.dispenser)} <small style="color:var(--muted);">[${esc(s.dispenserReg || "N/A")}]</small></td>
+      <td>${s.voided ? '<span class="badge bad">VOIDED</span>' : `<button class="btn-danger" style="min-height:32px;padding:4px 10px;font-size:12px;" onclick="voidSale('${esc(s.id)}')">Void</button>`}</td>
+    </tr>
+  `).join("");
+
+  v.innerHTML = `
+    ${renderKpis()}
+    ${renderMitigationAlerts()}
+    ${renderWindowsIncentiveCard()}
+    <div class="grid-2">
+      <div class="card">
+        <h3>Dispense Line (Strict FEFO)</h3>
+        <div class="row">
+          <input id="sellSearch" type="text" placeholder="Search name or barcode..." oninput="filterSellMeds()" style="flex:1;min-width:170px;" />
+          <button class="btn-secondary" onclick="scanSellBarcode()">Scan Barcode</button>
+        </div>
+        <div class="row">
+          <select id="sellMed" style="flex:1;min-width:220px;">${medOptions || '<option value="">No permitted stock</option>'}</select>
+        </div>
+        <div class="row">
+          <input id="sellQty" type="number" min="1" value="1" placeholder="Qty" style="width:88px;" onkeydown="if(event.key==='Enter')addToCart()" />
+          <button class="chip" type="button" onclick="bumpQty('sellQty', 1)">+1</button>
+          <button class="chip" type="button" onclick="bumpQty('sellQty', 5)">+5</button>
+          <button class="chip" type="button" onclick="bumpQty('sellQty', 10)">+10</button>
+          <input id="sellPrice" type="number" min="0" step="0.01" placeholder="Unit Price" style="width:115px;" onkeydown="if(event.key==='Enter')addToCart()" />
+        </div>
+        <div class="row">
+          <input id="sellDosage" type="text" placeholder="Dosage instruction (optional)" style="flex:1;min-width:160px;" onkeydown="if(event.key==='Enter')addToCart()" />
+          <input id="sellPayRef" type="text" placeholder="MM / Ref (optional)" style="width:140px;" />
+          <button class="btn-secondary" onclick="addToCart()">+ Add to Basket</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Customer Basket (${cart.length} ${cart.length === 1 ? "item" : "items"})</h3>
+        ${cartHtml}
+        <div class="row" style="justify-content:space-between;border-top:1px solid var(--border);padding-top:10px;margin-top:8px;">
+          <strong style="font-size:16px;">Total: ${cartTotal.toFixed(2)}</strong>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="sellPay"><option value="CASH">CASH</option><option value="MOBILE_MONEY">MOBILE_MONEY</option></select>
+            <button class="btn-primary" onclick="checkoutBasket()">Complete Sale</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Dispensing &amp; Sales Register (Immutable)</h3>
+      <div class="table-wrap">
+        <table><thead><tr><th>Time</th><th>Receipt &amp; Medicine</th><th>Batch</th><th>Qty</th><th>Total</th><th>Dispenser</th><th>Control</th></tr></thead><tbody>${saleRows}</tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+function addToCart() {
+  const medId = document.getElementById("sellMed").value;
+  const qty = parseInt(document.getElementById("sellQty").value, 10);
+  const unitPrice = money(parseFloat(document.getElementById("sellPrice").value));
+  const dosage = document.getElementById("sellDosage").value.trim();
+  const payRef = document.getElementById("sellPayRef")?.value.trim() || "";
+
+  const med = db.medicines.find(m => m.id === medId);
+  if (!med) return alert("Select a medicine.");
+  if (med.nda_schedule === "RESTRICTED") return alert("BLOCKED: Restricted medicine cannot be sold.");
+  if (!Number.isInteger(qty) || qty <= 0) return alert("Enter a valid integer base-unit quantity.");
+  if (Number.isNaN(unitPrice) || unitPrice < 0) return alert("Enter a valid unit price.");
+  if (unitPrice === 0 && !confirm("Unit price is 0.00. Add zero-price line?")) return;
+
+  const alreadyInCart = cart.filter(i => i.medId === medId).reduce((s, i) => s + i.qty, 0);
+  const avail = medAvailableStock(medId);
+  if (alreadyInCart + qty > avail) {
+    return alert(`Insufficient non-expired stock. Available: ${avail}, already in basket: ${alreadyInCart}.`);
+  }
+
+  const existingLine = cart.find(i => i.medId === med.id && i.unitPrice === unitPrice && i.dosage === dosage && i.payRef === payRef);
+  if (existingLine) {
+    existingLine.qty += qty;
+  } else {
+    cart.push({
+      medId: med.id,
+      medName: `${med.generic_name}${med.strength ? " (" + med.strength + ")" : ""}`,
+      baseUnit: med.base_unit,
+      qty,
+      unitPrice,
+      dosage,
+      payRef
+    });
+  }
+  document.getElementById("sellDosage").value = "";
+  renderView();
+  toast(`Added ${qty} ${med.base_unit} to basket`);
+}
+
+function removeCartItem(idx) {
+  cart.splice(idx, 1);
+  renderView();
+}
+
+function checkoutBasket() {
+  if (!cart.length) {
+    const medId = document.getElementById("sellMed")?.value;
+    const qty = parseInt(document.getElementById("sellQty")?.value || "0", 10);
+    if (medId && qty > 0) {
+      addToCart();
+      if (!cart.length) return;
+    } else {
+      return alert("Add at least one medicine to the basket first.");
+    }
+  }
+
+  for (const item of cart) {
+    const eligible = db.batches
+      .filter(b => b.medId === item.medId && batchStatus(b) === "ACTIVE")
+      .sort((a, b) => a.expiry.localeCompare(b.expiry));
+    const totalAvail = eligible.reduce((s, b) => s + b.qty, 0);
+    if (totalAvail < item.qty) {
+      return alert(`Stock changed: insufficient non-expired stock for ${item.medName} (avail ${totalAvail}).`);
+    }
+  }
+
+  const snapshot = JSON.stringify(db);
+  const payMethod = document.getElementById("sellPay")?.value || "CASH";
+  const receiptId = "RCP-" + Date.now();
+
+  try {
+    for (const item of cart) {
+      let remaining = item.qty;
+      const eligible = db.batches
+        .filter(b => b.medId === item.medId && batchStatus(b) === "ACTIVE")
+        .sort((a, b) => a.expiry.localeCompare(b.expiry));
+
+      for (const b of eligible) {
+        if (remaining <= 0) break;
+        const take = Math.min(b.qty, remaining);
+        b.qty -= take;
+        remaining -= take;
+        db.sales.unshift({
+          id: "S-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+          receiptId,
+          time: nowIso(),
+          medId: item.medId,
+          medName: item.medName,
+          batchId: b.id,
+          batchNo: b.batchNo,
+          qty: take,
+          unitPrice: item.unitPrice,
+          total: money(take * item.unitPrice),
+          payMethod,
+          payRef: item.payRef || "",
+          dosage: item.dosage,
+          dispenser: session.name,
+          dispenserReg: session.regNo || "N/A",
+          voided: false
+        });
+      }
+      addAudit("SALE", `[${receiptId}] Dispensed ${item.qty} ${item.baseUnit} of ${item.medName} by ${session.name}`);
+    }
+
+    cart = [];
+    saveDb();
+    renderView();
+    openReceipt(receiptId);
+  } catch (err) {
+    db = JSON.parse(snapshot);
+    alert("Checkout rolled back due to an error: " + (err?.message || err));
+  }
+}
+
+function openReceipt(receiptKey) {
+  const lines = db.sales.filter(s => (s.receiptId || s.id) === receiptKey);
+  if (!lines.length) return;
+  const first = lines[0];
+  const grandTotal = money(lines.filter(l => !l.voided).reduce((a, b) => a + money(b.total), 0));
+  const rowsHtml = lines.map(l => `
+    <tr>
+      <td>${esc(l.medName)}<br><small style="color:var(--muted);">Batch ${esc(l.batchNo)}${l.dosage ? " • Sig: " + esc(l.dosage) : ""}</small></td>
+      <td>${l.qty}</td>
+      <td>${money(l.total).toFixed(2)}${l.voided ? " (VOID)" : ""}</td>
+    </tr>
+  `).join("");
+
+  document.getElementById("receiptContent").innerHTML = `
+    <div style="text-align:center;border-bottom:1px dashed #cbd5e1;padding-bottom:10px;margin-bottom:10px;">
+      <strong style="font-size:16px;">${esc(db.shop.name)}</strong><br>
+      <small style="color:var(--muted);">NDA: ${esc(db.shop.nda || "N/A")} • LG: ${esc(db.shop.lg || "N/A")}</small><br>
+      <small>Receipt: <b>${esc(receiptKey)}</b> • ${esc(first.time.slice(0, 16).replace("T", " "))}</small>
+    </div>
+    <table style="margin-bottom:10px;">
+      <thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;margin-bottom:8px;">
+      <span>Total (${esc(first.payMethod)}${first.payRef ? " • " + esc(first.payRef) : ""})</span>
+      <span>${grandTotal.toFixed(2)}</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+      Dispenser: ${esc(first.dispenser)} (Reg: ${esc(first.dispenserReg || "N/A")})
+    </div>
+    <div class="row no-print" style="justify-content:flex-end;margin:0;">
+      <button class="btn-ghost" onclick="window.print()">Print Receipt</button>
+      <button class="btn-primary" onclick="closeReceipt()">Done</button>
+    </div>
+  `;
+  document.getElementById("receiptModal").style.display = "flex";
+}
+
+function closeReceipt() {
+  document.getElementById("receiptModal").style.display = "none";
+}
+
+async function scanSellBarcode() {
+  try {
+    const code = await scanBarcodeWithCamera("Scan Medicine Barcode to Sell");
+    if (!code) return;
+    document.getElementById("sellSearch").value = code;
+    filterSellMeds();
+    const match = db.medicines.find(m => (m.barcode || "").trim().toLowerCase() === code.toLowerCase());
+    if (match) {
+      if (match.nda_schedule === "RESTRICTED") return alert("BLOCKED: Scanned medicine is marked RESTRICTED.");
+      document.getElementById("sellMed").value = match.id;
+      toast(`Selected ${match.generic_name}`);
+    } else {
+      alert(`Barcode ${code} not found in catalogue.`);
+    }
+  } catch (err) {
+    if (!String(err?.message || "").includes("cancelled")) alert(err?.message || err);
+  }
+}
+
+function filterSellMeds() {
+  const q = document.getElementById("sellSearch").value.trim().toLowerCase();
+  const sel = document.getElementById("sellMed");
+  const usableMeds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && (
+    !q || m.generic_name.toLowerCase().includes(q) || (m.brand_name || "").toLowerCase().includes(q) || (m.barcode || "").toLowerCase().includes(q)
+  ));
+  sel.innerHTML = usableMeds.map(m => {
+    const avail = medAvailableStock(m.id);
+    return `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${avail} ${esc(m.base_unit)}</option>`;
+  }).join("") || '<option value="">No matching medicine</option>';
+}
+
+async function voidSale(saleId) {
+  const sale = db.sales.find(s => s.id === saleId);
+  if (!sale || sale.voided) return;
+  const siblings = sale.receiptId
+    ? db.sales.filter(s => !s.voided && s.receiptId === sale.receiptId && s.medId === sale.medId && s.id !== sale.id)
+    : [];
+  const splitNote = siblings.length
+    ? `\n(Note: This receipt has ${siblings.length} other batch split line(s) for ${sale.medName}.)`
+    : "";
+  const supervisor = await authorizeSupervisor(`Void batch line: ${sale.qty} x ${sale.medName} (Batch ${sale.batchNo})${splitNote}`);
+  if (!supervisor) return;
+  const reason = prompt("Reason for void (required):");
+  if (!reason || !reason.trim()) return alert("Void reason is required.");
+
+  sale.voided = true;
+  sale.voidReason = reason.trim();
+  sale.voidedBy = supervisor.name;
+  const batch = db.batches.find(b => b.id === sale.batchId);
+  if (batch) batch.qty += sale.qty;
+  addAudit("VOID_SALE", `Voided ${sale.id} (+${sale.qty} returned to batch ${sale.batchNo}) by ${supervisor.name} — Reason: ${reason.trim()}`);
+  saveDb();
+  renderView();
+  toast("Sale line voided and batch stock restored");
+}
+
+function renderGrn(v) {
+  const medOpts = db.medicines.map(m =>
+    `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} (${esc(m.base_unit)}${m.pack_name ? ` | ${esc(m.pack_name)}=${m.pack_multiplier}` : ""})${m.barcode ? ` [${esc(m.barcode)}]` : ""} — ${esc(m.nda_schedule)}</option>`
+  ).join("");
+
+  const batchRows = db.batches.map(b => {
+    const m = db.medicines.find(x => x.id === b.medId);
+    const st = batchStatus(b);
+    const near = isNearExpiry(b);
+    const badgeCls = st === "ACTIVE" ? (near ? "warn" : "ok") : (st === "DEPLETED" ? "warn" : "bad");
+    const statusLabel = near ? `EXP ≤${daysUntilDateStr(b.expiry)}D` : st;
+    return `
+      <tr>
+        <td>${esc(m ? m.generic_name : b.medId)}</td>
+        <td>${esc(b.batchNo)}</td>
+        <td>${esc(b.wholesaler)}<br><small style="color:var(--muted);">Inv: ${esc(b.invoiceNo)}</small></td>
+        <td>${esc(b.expiry)}</td>
+        <td>${b.qty} ${esc(m ? m.base_unit : "")}</td>
+        <td><span class="badge ${badgeCls}">${statusLabel}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="btn-ghost" onclick="toggleQuarantine('${esc(b.id)}')">${b.quarantined ? "Release" : "Quarantine"}</button>
+          <button class="btn-ghost" onclick="adjustBatchStock('${esc(b.id)}')">Adjust</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  v.innerHTML = `
+    ${renderKpis()}
+    ${renderMitigationAlerts()}
+    <div class="card">
+      <h3>Goods Received Note (GRN) — Camera Stocking</h3>
+      <div class="row">
+        <input id="grnScannedCode" type="text" placeholder="Scanned / Barcode (optional)" style="width:185px;" />
+        <button class="btn-secondary" onclick="scanForStocking()">Scan Barcode to Stock</button>
+        <select id="grnMed" style="flex:1;min-width:240px;">${medOpts || '<option value="">Add or scan a medicine first</option>'}</select>
+      </div>
+      <div class="row">
+        <input id="grnWholesaler" type="text" placeholder="Licensed Wholesaler & NDA Wholesale Licence No." style="flex:1;min-width:240px;" />
+        <input id="grnInvoice" type="text" placeholder="Supplier Invoice No." />
+        <input id="grnBatch" type="text" placeholder="Manufacturer Batch No." />
+      </div>
+      <div class="row">
+        <label style="font-size:12px;color:var(--muted);font-weight:600;">Expiry: <input id="grnExpiry" type="date" /></label>
+        <select id="grnUnitMode">
+          <option value="BASE">Base Units</option>
+          <option value="PACK">Packs (Auto-Multiply)</option>
+        </select>
+        <input id="grnQty" type="number" min="1" placeholder="Qty" style="width:95px;" onkeydown="if(event.key==='Enter')receiveGrn()" />
+        <button class="chip" type="button" onclick="bumpQty('grnQty', 1)">+1</button>
+        <button class="chip" type="button" onclick="bumpQty('grnQty', 10)">+10</button>
+        <button class="btn-primary" onclick="receiveGrn()">Receive Stock</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Batch Inventory (Immutable History)</h3>
+      <div class="table-wrap">
+        <table><thead><tr><th>Medicine</th><th>Batch</th><th>Supplier / Invoice</th><th>Expiry</th><th>Remaining</th><th>Status</th><th>Control</th></tr></thead><tbody>${batchRows}</tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+async function scanForStocking() {
+  try {
+    const code = await scanBarcodeWithCamera("Scan Medicine During Stocking");
+    if (!code) return;
+    document.getElementById("grnScannedCode").value = code;
+
+    const existing = db.medicines.find(m => (m.barcode || "").trim().toLowerCase() === code.toLowerCase());
+    if (existing) {
+      if (existing.nda_schedule === "RESTRICTED") {
+        return alert(`BLOCKED: ${existing.generic_name} is marked RESTRICTED and cannot be stocked.`);
+      }
+      document.getElementById("grnMed").value = existing.id;
+      document.getElementById("grnQty").focus();
+      toast(`Matched ${existing.generic_name}`);
+      return;
+    }
+
+    const createNew = confirm(`Barcode "${code}" is not yet in your Medicines list.\n\nPress OK to register this medicine now for stocking.`);
+    if (!createNew) return;
+
+    const generic_name = (prompt("Generic Name (required):") || "").trim();
+    if (!generic_name) return alert("Generic name is required.");
+    const brand_name = (prompt("Brand Name (optional):") || "").trim();
+    const strength = (prompt("Strength e.g. 500mg (optional):") || "").trim();
+    const base_unit = ((prompt("Base Unit (TABLET, CAPSULE, ML, BOTTLE, SACHET, TUBE, PIECE):", "TABLET") || "TABLET").trim().toUpperCase());
+    const rawSched = ((prompt("NDA Schedule (CLASS_C or RESTRICTED):", "CLASS_C") || "CLASS_C").trim().toUpperCase());
+    const nda_schedule = rawSched === "RESTRICTED" ? "RESTRICTED" : "CLASS_C";
+
+    const newMed = {
+      id: "M-" + Date.now(),
+      generic_name,
+      brand_name,
+      dosage_form: "",
+      strength,
+      base_unit,
+      reorder_level: 10,
+      barcode: code,
+      nda_schedule,
+      pack_name: "",
+      pack_multiplier: 1
+    };
+    db.medicines.push(newMed);
+    addAudit("ADD_MED_SCAN", `Added ${generic_name} with scanned barcode ${code} (${nda_schedule})`);
+    saveDb();
+    renderView();
+    document.getElementById("grnScannedCode").value = code;
+    document.getElementById("grnMed").value = newMed.id;
+    toast(`Registered ${generic_name}`);
+  } catch (err) {
+    if (!String(err?.message || "").includes("cancelled")) alert(err?.message || err);
+  }
+}
+
+function receiveGrn() {
+  const medId = document.getElementById("grnMed").value;
+  const scannedCode = document.getElementById("grnScannedCode").value.trim();
+  const wholesaler = document.getElementById("grnWholesaler").value.trim();
+  const invoiceNo = document.getElementById("grnInvoice").value.trim();
+  const batchNo = document.getElementById("grnBatch").value.trim();
+  const expiry = document.getElementById("grnExpiry").value;
+  const unitMode = document.getElementById("grnUnitMode").value;
+  const rawQty = parseInt(document.getElementById("grnQty").value, 10);
+
+  const med = db.medicines.find(m => m.id === medId);
+  if (!med) return alert("Select or scan a medicine.");
+  if (med.nda_schedule === "RESTRICTED") return alert("BLOCKED: Restricted medicine cannot be received.");
+  if (!wholesaler || !invoiceNo || !batchNo || !expiry || !Number.isInteger(rawQty) || rawQty <= 0) {
+    return alert("Wholesaler + NDA licence no., invoice no., manufacturer batch no., expiry date, and positive quantity are mandatory.");
+  }
+  if (expiry <= localDateStr()) return alert("BLOCKED: Expired stock cannot be received.");
+  if (db.batches.some(b => b.medId === medId && b.invoiceNo.toLowerCase() === invoiceNo.toLowerCase() && b.batchNo.toLowerCase() === batchNo.toLowerCase())) {
+    return alert("BLOCKED: Same batch on the same supplier invoice cannot be entered twice.");
+  }
+
+  if (scannedCode && !med.barcode) med.barcode = scannedCode;
+
+  const baseQty = unitMode === "PACK" ? rawQty * (med.pack_multiplier || 1) : rawQty;
+  db.batches.push({
+    id: "B-" + Date.now() + "-" + Math.random().toString(36).slice(2, 5),
+    receivedAt: nowIso(),
+    receivedBy: session.name,
+    medId,
+    wholesaler,
+    invoiceNo,
+    batchNo,
+    expiry,
+    initialQty: baseQty,
+    qty: baseQty,
+    quarantined: false
+  });
+  addAudit("GRN", `Received ${baseQty} ${med.base_unit} of ${med.generic_name} (Batch ${batchNo}, Inv ${invoiceNo}, Wholesaler ${wholesaler})`);
+  saveDb();
+  renderView();
+  toast(`Stocked ${baseQty} ${med.base_unit}`);
+}
+
+async function toggleQuarantine(batchId) {
+  const b = db.batches.find(x => x.id === batchId);
+  if (!b) return;
+  const supervisor = await authorizeSupervisor(`${b.quarantined ? "Release" : "Quarantine"} batch ${b.batchNo}`);
+  if (!supervisor) return;
+  const reason = prompt("Reason (required):");
+  if (!reason || !reason.trim()) return alert("Reason is required.");
+
+  b.quarantined = !b.quarantined;
+  addAudit("QUARANTINE", `Batch ${b.batchNo} quarantined=${b.quarantined} by ${supervisor.name} — Reason: ${reason.trim()}`);
+  saveDb();
+  renderView();
+  toast(b.quarantined ? "Batch quarantined" : "Batch released");
+}
+
+async function adjustBatchStock(batchId) {
+  const b = db.batches.find(x => x.id === batchId);
+  if (!b) return;
+  const supervisor = await authorizeSupervisor(`Adjust stock on batch ${b.batchNo} (current: ${b.qty})`);
+  if (!supervisor) return;
+  const deltaStr = prompt(`Enter quantity adjustment (+ to add, - to deduct) from ${b.qty}:`);
+  const delta = parseInt(deltaStr, 10);
+  if (!Number.isInteger(delta) || delta === 0) return alert("Enter a non-zero integer.");
+  if (b.qty + delta < 0) return alert("Adjustment cannot make batch stock negative.");
+  const reason = prompt("Reason for stock adjustment (required):");
+  if (!reason || !reason.trim()) return alert("Reason is required.");
+
+  b.qty += delta;
+  addAudit("STOCK_ADJUST", `Batch ${b.batchNo} adjusted by ${delta > 0 ? "+" + delta : delta} (new qty: ${b.qty}) by ${supervisor.name} — Reason: ${reason.trim()}`);
+  saveDb();
+  renderView();
+  toast("Stock adjusted");
+}
+
+function parseCsvLine(line) {
+  const out = [];
+  let cur = "", inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+function renderMeds(v) {
+  const rows = db.medicines.map(m => {
+    const avail = medAvailableStock(m.id);
+    const isLow = m.nda_schedule !== "RESTRICTED" && avail <= (m.reorder_level || 0);
+    return `
+      <tr>
+        <td>${esc(m.generic_name)}</td>
+        <td>${esc(m.brand_name)}</td>
+        <td>${esc(m.dosage_form)} ${esc(m.strength)}</td>
+        <td>${avail} ${esc(m.base_unit)} ${isLow ? '<span class="badge warn">LOW</span>' : ""}</td>
+        <td>${esc(m.barcode)}</td>
+        <td><span class="badge ${m.nda_schedule === "RESTRICTED" ? "bad" : "ok"}">${esc(m.nda_schedule)}</span></td>
+      </tr>
+    `;
+  }).join("");
+
+  v.innerHTML = `
+    <div class="card">
+      <h3>Import Medicines CSV (Upserts Existing Items)</h3>
+      <p style="font-size:12px;color:var(--muted);">Columns: <code>generic_name,brand_name,dosage_form,strength,base_unit,reorder_level,barcode,nda_schedule,pack_name,pack_multiplier</code></p>
+      <textarea id="csvInput" rows="4" style="width:100%;" placeholder="Paracetamol,Panadol,TABLET,500mg,TABLET,100,600123456789,CLASS_C,Box,100&#10;Diazepam,Valium,TABLET,5mg,TABLET,0,,RESTRICTED,Box,30"></textarea>
+      <div class="row" style="margin-top:8px;">
+        <button class="btn-primary" onclick="importCsv()">Import CSV</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Medicine Catalogue (${db.medicines.length})</h3>
+      <div class="table-wrap">
+        <table><thead><tr><th>Generic</th><th>Brand</th><th>Form &amp; Strength</th><th>Stock</th><th>Barcode</th><th>NDA Schedule</th></tr></thead><tbody>${rows}</tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+function importCsv() {
+  const raw = document.getElementById("csvInput").value.trim();
+  if (!raw) return alert("Paste CSV rows first.");
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const startIdx = lines[0].toLowerCase().startsWith("generic_name") ? 1 : 0;
+  let added = 0, updated = 0;
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const cols = parseCsvLine(lines[i]);
+    if (!cols[0]) continue;
+    const rawSched = (cols[7] || "CLASS_C").toUpperCase();
+    const item = {
+      generic_name: cols[0],
+      brand_name: cols[1] || "",
+      dosage_form: (cols[2] || "").toUpperCase(),
+      strength: cols[3] || "",
+      base_unit: (cols[4] || "TABLET").toUpperCase(),
+      reorder_level: parseInt(cols[5] || "0", 10) || 0,
+      barcode: cols[6] || "",
+      nda_schedule: rawSched === "RESTRICTED" ? "RESTRICTED" : "CLASS_C",
+      pack_name: cols[8] || "",
+      pack_multiplier: Math.max(1, parseInt(cols[9] || "1", 10) || 1)
+    };
+    const existing = db.medicines.find(m =>
+      m.generic_name.toLowerCase() === item.generic_name.toLowerCase() &&
+      (m.strength || "").toLowerCase() === item.strength.toLowerCase() &&
+      (m.dosage_form || "").toLowerCase() === item.dosage_form.toLowerCase()
+    );
+    if (existing) {
+      Object.assign(existing, item);
+      updated++;
+    } else {
+      db.medicines.push({ id: "M-" + Date.now() + "-" + i, ...item });
+      added++;
+    }
+  }
+  addAudit("IMPORT_MEDS", `CSV import: ${added} added, ${updated} updated`);
+  saveDb();
+  renderView();
+  toast(`Imported ${added} new, updated ${updated}`);
+}
+
+function renderReports(v) {
+  const validSales = db.sales.filter(s => !s.voided);
+  const cashTotal = money(validSales.filter(s => s.payMethod === "CASH").reduce((a, b) => a + money(b.total), 0));
+  const mmTotal = money(validSales.filter(s => s.payMethod === "MOBILE_MONEY").reduce((a, b) => a + money(b.total), 0));
+  const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "null");
+
+  const auditRows = db.audit.slice(0, 40).map(a =>
+    `<tr><td>#${esc(a.seq ?? "-")}</td><td>${esc(a.time.slice(0, 19).replace("T", " "))}</td><td>${esc(a.user)}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`
+  ).join("");
+
+  v.innerHTML = `
+    ${renderKpis()}
+    ${renderMitigationAlerts()}
+    <div class="card">
+      <h3>Sales &amp; Cash-Up</h3>
+      <p style="margin:0 0 10px;"><strong>Expected Cash:</strong> ${cashTotal.toFixed(2)} &bull; <strong>Mobile Money:</strong> ${mmTotal.toFixed(2)}</p>
+      <div class="row">
+        <input id="countedCash" type="number" step="0.01" placeholder="Counted Cash" />
+        <button class="btn-primary" onclick="closeDay(${cashTotal}, ${mmTotal})">Close Day</button>
+        <button class="btn-ghost" onclick="exportDispensingCsv()">Export NDA CSV</button>
+        <button class="btn-ghost" onclick="exportBackupJson()">Backup JSON</button>
+        <button class="btn-ghost" onclick="exportWindowsBridgeBundle()">Windows Pack</button>
+        <label class="btn-ghost" style="display:inline-flex;align-items:center;">
+          Restore JSON <input type="file" accept="application/json,.json" onchange="restoreBackupJson(event)" style="display:none;" />
+        </label>
+      </div>
+      <small style="color:var(--muted);">
+        Last auto-snapshot: ${snap?.savedAt ? esc(snap.savedAt.slice(0, 19).replace("T", " ")) : "None"}${snap?.checksum ? ` • CHK ${esc(snap.checksum)}` : ""}
+        ${db.meta?.lastExportAt ? ` • Last export: ${esc(db.meta.lastExportAt.slice(0, 16).replace("T", " "))}` : ""}
+      </small>
+    </div>
+    <div class="card">
+      <h3>Storage Temperature Log (NDA Inspector Pack)</h3>
+      <div class="row">
+        <input id="tempC" type="number" step="0.1" placeholder="Room Temp (°C)" style="width:145px;" />
+        <input id="fridgeC" type="number" step="0.1" placeholder="Fridge Temp (°C)" style="width:155px;" />
+        <button class="btn-primary" onclick="logTemp()">Record Temperature</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Immutable Audit Log</h3>
+      <div class="table-wrap">
+        <table><thead><tr><th>#</th><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr></thead><tbody>${auditRows}</tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+function logTemp() {
+  const room = document.getElementById("tempC").value.trim();
+  const fridge = document.getElementById("fridgeC").value.trim();
+  if (!room) return alert("Enter room temperature.");
+  db.tempLogs.unshift({ time: nowIso(), by: session.name, roomC: room, fridgeC: fridge || "N/A" });
+  addAudit("TEMP_LOG", `Room: ${room}°C, Fridge: ${fridge || "N/A"}°C`);
+  saveDb();
+  toast("Temperature logged");
+}
+
+function closeDay(expectedCash, mmTotal) {
+  const counted = parseFloat(document.getElementById("countedCash").value);
+  if (Number.isNaN(counted)) return alert("Enter counted cash.");
+  const diff = money(counted - expectedCash);
+  const flag = Math.abs(diff) >= 0.01 ? "VARIANCE_FLAGGED" : "EXACT_MATCH";
+  addAudit("DAY_CLOSE", `[${flag}] By=${session.name}, ExpectedCash=${money(expectedCash).toFixed(2)}, CountedCash=${money(counted).toFixed(2)}, Variance=${diff.toFixed(2)}, MobileMoney=${money(mmTotal).toFixed(2)}`);
+  saveDb();
+  alert(`Day close recorded permanently (${flag}). Cash Variance: ${diff.toFixed(2)}`);
+  renderView();
+}
+
+function exportDispensingCsv() {
+  const header = "time,receipt_id,medicine,batch_no,qty,unit_price,total,payment,pay_ref,dosage,dispenser,council_reg_no,voided\n";
+  const body = db.sales.map(s =>
+    [s.time, s.receiptId || "", `"${String(s.medName).replace(/"/g, '""')}"`, s.batchNo, s.qty, s.unitPrice, s.total, s.payMethod, `"${String(s.payRef || "").replace(/"/g, '""')}"`, `"${String(s.dosage || "").replace(/"/g, '""')}"`, `"${String(s.dispenser).replace(/"/g, '""')}"`, `"${String(s.dispenserReg).replace(/"/g, '""')}"`, s.voided].join(",")
+  ).join("\n");
+  db.meta.lastExportAt = nowIso();
+  addAudit("EXPORT_CSV", "Exported NDA dispensing register CSV");
+  saveDb();
+  renderView();
+  downloadBlob(header + body, `sseddume-dispensing-register-${localDateStr()}.csv`, "text/csv");
+  toast("NDA CSV exported");
+}
+
+function exportBackupJson() {
+  const snapshotCopy = JSON.parse(JSON.stringify(db));
+  const envelope = {
+    system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
+    exportedAt: nowIso(),
+    checksum: computeChecksum(snapshotCopy),
+    data: snapshotCopy
+  };
+  db.meta.lastExportAt = nowIso();
+  addAudit("EXPORT_JSON", `Exported JSON backup [CHK:${envelope.checksum}]`);
+  saveDb();
+  renderView();
+  downloadBlob(JSON.stringify(envelope, null, 2), `sseddume-dsms-backup-${localDateStr()}.json`, "application/json");
+  toast("Verified JSON backup downloaded");
+}
+
+async function restoreBackupJson(ev) {
+  const file = ev.target.files?.[0];
+  ev.target.value = "";
+  if (!file) return;
+  const supervisor = await authorizeSupervisor("Restore database from JSON backup (replaces current local data)");
+  if (!supervisor) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const payload = parsed?.data && typeof parsed.data === "object" ? parsed.data : parsed;
+    if (parsed?.checksum) {
+      const actual = computeChecksum(payload);
+      if (actual !== parsed.checksum) {
+        return alert(`BLOCKED: Backup checksum mismatch (expected ${parsed.checksum}, got ${actual}). File may be corrupted or altered.`);
+      }
+    }
+    if (!payload || !Array.isArray(payload.medicines) || !Array.isArray(payload.batches) || !Array.isArray(payload.sales)) {
+      return alert("Invalid backup JSON structure.");
+    }
+    db = {
+      ...defaultState(),
+      ...payload,
+      shop: { ...defaultState().shop, ...(payload.shop || {}) },
+      windowsBridge: { ...defaultState().windowsBridge, ...(payload.windowsBridge || {}) },
+      meta: { ...defaultState().meta, ...(payload.meta || {}) }
+    };
+    addAudit("RESTORE_BACKUP", `Restored verified backup from ${file.name} by ${supervisor.name}`);
+    saveDb();
+    populateLoginStaff();
+    renderView();
+    toast("Backup restored");
+  } catch (err) {
+    alert("Failed to restore backup: " + (err?.message || err));
+  }
+}
+
+function downloadBlob(content, filename, mime) {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function renderAdmin(v) {
+  const wb = db.windowsBridge || {};
+  const staffRows = db.staff.map(s => `
+    <tr>
+      <td>${esc(s.name)}</td>
+      <td>${esc(s.role)}</td>
+      <td>${esc(s.regNo || "N/A")}</td>
+      <td>${s.fpEnabled ? '<span class="badge ok">ENROLLED</span>' : '<span class="badge warn">NOT SET</span>'}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn-ghost" onclick="enrollFingerprintForStaff('${esc(s.id)}')">Enroll FP</button>
+        ${s.fpEnabled ? `<button class="btn-ghost" onclick="disableFingerprintForStaff('${esc(s.id)}')">Disable FP</button>` : ""}
+      </td>
+    </tr>
+  `).join("");
+
+  v.innerHTML = `
+    <div class="card">
+      <h3>Shop &amp; NDA Licence Details</h3>
+      <div class="row">
+        <input id="admName" type="text" value="${esc(db.shop.name)}" placeholder="Drug Shop Name" style="flex:1;min-width:220px;" />
+        <input id="admNda" type="text" value="${esc(db.shop.nda)}" placeholder="NDA Licence No." />
+        <input id="admLg" type="text" value="${esc(db.shop.lg)}" placeholder="Local Government Licence No." />
+        <label style="font-size:12.5px;display:inline-flex;align-items:center;gap:6px;">
+          <input id="admAutoLock" type="checkbox" ${db.shop.autoLockOnHide ? "checked" : ""} style="min-height:auto;" /> Auto-lock when app hidden
+        </label>
+        <button class="btn-primary" onclick="saveShopDetails()">Save Shop Details</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Windows App Pairing &amp; Scan Incentive</h3>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px;">
+        Scan a Windows QR code or paste a pairing string (<code>SSEDDUME-WIN|Shop-PC|http://192.168.1.50:8080|PAIR-01</code>) to link this Android app with a Windows desktop station.
+      </p>
+      <div class="row">
+        <input id="winCodeInput" type="text" value="${esc(wb.endpointUrl || wb.tokenOrCode || "")}" placeholder="SSEDDUME-WIN|Host|http://PC-IP:8080|CODE" style="flex:1;min-width:240px;" />
+        <button class="btn-accent" onclick="scanWindowsPairingQr()">Scan QR</button>
+        <button class="btn-primary" onclick="saveManualWindowsBridge()">Link Windows</button>
+        <button class="btn-ghost" onclick="exportWindowsBridgeBundle()">Export Win Pack</button>
+        ${wb.paired ? `<button class="btn-ghost" onclick="unpairWindowsBridge()">Unpair</button>` : ""}
+      </div>
+      <div style="font-size:12px;color:var(--muted);">
+        Status: <strong>${wb.paired ? `Paired with ${esc(wb.hostName || "Windows PC")} (${esc(wb.endpointUrl || "Code linked")})` : "Not paired yet — scan a Windows QR code to unlock pairing"}</strong>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Add Staff (Council Registration &amp; PIN)</h3>
+      <div class="row">
+        <input id="stName" type="text" placeholder="Full Name" />
+        <select id="stRole">
+          <option value="Dispenser">Dispenser</option>
+          <option value="In-Charge">In-Charge</option>
+          <option value="Owner">Owner</option>
+        </select>
+        <input id="stReg" type="text" placeholder="Council Registration No." />
+        <input id="stPin" type="password" inputmode="numeric" placeholder="Staff PIN (min 4)" maxlength="8" />
+        <button class="btn-primary" onclick="addStaff()">Add Staff</button>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Name</th><th>Role</th><th>Council Reg No.</th><th>Fingerprint</th><th>Action</th></tr></thead><tbody>${staffRows}</tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+function saveManualWindowsBridge() {
+  const val = document.getElementById("winCodeInput").value.trim();
+  if (!val) return alert("Enter or scan a Windows pairing code or URL.");
+  applyWindowsPairingPayload(val);
+}
+
+function saveShopDetails() {
+  db.shop.name = document.getElementById("admName").value.trim() || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
+  db.shop.nda = document.getElementById("admNda").value.trim();
+  db.shop.lg = document.getElementById("admLg").value.trim();
+  db.shop.autoLockOnHide = Boolean(document.getElementById("admAutoLock")?.checked);
+  addAudit("ADMIN_SHOP", `Updated shop details (${db.shop.name}, NDA: ${db.shop.nda}, LG: ${db.shop.lg}, AutoLock=${db.shop.autoLockOnHide})`);
+  saveDb();
+  toast("Shop details saved");
+}
+
+function addStaff() {
+  const name = document.getElementById("stName").value.trim();
+  const role = document.getElementById("stRole").value;
+  const regNo = document.getElementById("stReg").value.trim();
+  const pin = document.getElementById("stPin").value.trim();
+
+  if (!name || pin.length < 4) return alert("Enter staff name and a PIN of at least 4 digits.");
+  if ((role === "In-Charge" || role === "Dispenser") && !regNo) {
+    return alert("Council registration number is required for In-Charge and Dispenser.");
+  }
+  db.staff.push({
+    id: "U-" + Date.now(),
+    name,
+    role,
+    regNo: regNo || "N/A",
+    pin,
+    fpEnabled: false,
+    fpCredId: "",
+    active: true
+  });
+  addAudit("ADD_STAFF", `Added ${name} (${role}, Reg: ${regNo || "N/A"})`);
+  saveDb();
+  renderView();
+  toast(`Added ${name}`);
+}
+
+populateLoginStaff();
+renderHeader();
+</script>
+</body>
+</html>

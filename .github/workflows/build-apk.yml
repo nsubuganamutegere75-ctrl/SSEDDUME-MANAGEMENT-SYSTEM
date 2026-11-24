@@ -24,8 +24,22 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
-      - name: Bootstrap Capacitor & Android project if missing
+      - name: Prepare www/index.html & Capacitor Android project
         run: |
+          mkdir -p www
+          if [ ! -f www/index.html ]; then
+            if [ -f index.html ]; then
+              cp index.html www/index.html
+            else
+              HTML_FILE=$(find . -maxdepth 1 -iname "*.html" | head -n 1)
+              if [ -n "$HTML_FILE" ]; then
+                cp "$HTML_FILE" www/index.html
+              else
+                echo "No HTML file found in repository!" && exit 1
+              fi
+            fi
+          fi
+
           if [ ! -f package.json ]; then
             npm init -y
             npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor-mlkit/barcode-scanning@6
@@ -50,12 +64,10 @@ jobs:
             npx cap add android
           fi
 
-          # Ensure minSdkVersion >= 26 for ML Kit barcode scanning
           if [ -f android/variables.gradle ]; then
             sed -i 's/minSdkVersion = [0-9]\+/minSdkVersion = 26/' android/variables.gradle
           fi
 
-          # Ensure camera, biometric, and cleartext permissions exist
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
             grep -q "android.permission.CAMERA" "$MANIFEST" || sed -i '/<application/i \    <uses-permission android:name="android.permission.CAMERA" />' "$MANIFEST"

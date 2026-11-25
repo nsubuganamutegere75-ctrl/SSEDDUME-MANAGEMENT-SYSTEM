@@ -1,4 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Mobile POS Terminal</title>
+  <style>
+    :root {
+      --bg: #eef2f6;
+      --surface: #ffffff;
+      --surface-2: #f8fafc;
+      --primary: #0f766e;
+      --primary-dark: #115e59;
+      --primary-soft: #ccfbf1;
+      --accent: #0369a1;
+      --accent-soft: #e0f2fe;
+      --danger: #b91c1c;
+      --danger-soft: #fee2e2;
+      --warn: #b45309;
+      --warn-soft: #fef3c7;
+      --ok: #15803d;
+      --ok-soft: #dcfce7;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #cbd5e1;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 78px; }
+
+    .topbar {
+      background: linear-gradient(135deg, #0f172a, #115e59);
+      color: #fff; padding: 14px 16px; position: sticky; top: 0; z-index: 30;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    }
+    .brand { font-size: 15px; font-weight: 800; line-height: 1.25; }
+    .sub { font-size: 11px; color: #cbd5e1; margin-top: 3px; }
+    .pill {
+      background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.26);
+      color: #fff; padding: 5px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+    }
+    .lock-btn {
+      background: #fff; color: #0f172a; border: none; border-radius: 10px;
+      padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+
+    .wrap { padding: 12px 14px; max-width: 720px; margin: 0 auto; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+    }
+    .card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+
+    .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+    .kpi-lbl { font-size: 10.5px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .kpi-val { font-size: 19px; font-weight: 800; margin-top: 4px; }
+
+    .bridge-card {
+      background: linear-gradient(135deg, #f0f9ff, #f0fdfa);
+      border: 1px solid #bae6fd; border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px;
+    }
+    .tag {
+      display: inline-block; background: var(--accent-soft); color: var(--accent);
+      font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; margin-bottom: 6px;
+    }
+    .tag.ok { background: var(--ok-soft); color: var(--ok); }
+    .tag.warn { background: var(--warn-soft); color: var(--warn); }
+
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+    input, select, button {
+      min-height: 42px; padding: 8px 12px; border-radius: 10px;
+      border: 1px solid var(--border); font-size: 14px; background: #fff; color: var(--text);
+    }
+    button { font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    button.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.dark { background: #1e293b; color: #fff; border-color: #1e293b; }
+    button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+    button.ghost { background: var(--surface-2); color: var(--text); border-color: var(--border); min-height: 36px; font-size: 12.5px; }
+
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
+      border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(5, 1fr);
+      padding: 6px 4px; z-index: 40;
+    }
+    .nav-btn {
+      border: none; background: transparent; min-height: 50px; padding: 4px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; color: var(--muted); border-radius: 10px;
+    }
+    .nav-btn.active { background: var(--primary-soft); color: var(--primary-dark); }
+
+    .modal { display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.86); z-index: 100; align-items: center; justify-content: center; padding: 14px; }
+    .modal-box { background: #fff; border-radius: 14px; padding: 16px; width: 100%; max-width: 440px; }
+    video { width: 100%; border-radius: 10px; background: #000; max-height: 280px; object-fit: cover; }
+
+    #toast {
+      position: fixed; top: 72px; left: 50%; transform: translateX(-50%);
+      background: #0f172a; color: #fff; padding: 9px 15px; border-radius: 999px;
+      font-size: 12.5px; font-weight: 700; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 200;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <div class="brand" id="topTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
+      <div class="sub" id="topSub">Mobile POS Terminal • Offline-First</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span class="pill" id="rolePill">Owner</span>
+      <button class="lock-btn" onclick="switchClearancePrompt()">Switch / PIN</button>
+    </div>
+  </div>
+
+  <div class="wrap" id="appMain"></div>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-tab="sell" onclick="setTab('sell')">💊<span>Sell</span></button>
+    <button class="nav-btn" data-tab="stock" onclick="setTab('stock')">📦<span>Stock</span></button>
+    <button class="nav-btn" data-tab="meds" onclick="setTab('meds')">📋<span>Meds</span></button>
+    <button class="nav-btn" data-tab="reports" onclick="setTab('reports')">📊<span>Reports</span></button>
+    <button class="nav-btn" data-tab="admin" onclick="setTab('admin')">🛡️<span>Admin</span></button>
+  </nav>
+
+  <div id="scannerModal" class="modal">
+    <div class="modal-box">
+      <h3 id="scanTitle" style="margin:0 0 8px;">Scan Gateway / Product QR</h3>
+      <video id="scanVideo" playsinline autoplay muted></video>
+      <div style="font-size:12px;color:var(--muted);margin:8px 0;">Point camera at the Windows Gateway QR code or medicine barcode.</div>
+      <div class="row" style="margin-bottom:0;">
+        <button class="ghost" style="flex:1;" onclick="manualQrEntry()">Paste / Enter Payload</button>
+        <button class="danger" onclick="stopScanner()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+const DB_KEY = "sseddume_mobile_db_v4";
+const PAIR_KEY = "sseddume_mobile_pair_v4";
+const SESSION_KEY = "sseddume_mobile_session_v4";
+const DEV_ID_KEY = "sseddume_mobile_dev_id_v4";
+
+function getDevId() {
+  let id = localStorage.getItem(DEV_ID_KEY);
+  if (!id) {
+    id = "AND-" + Math.random().toString(36).slice(2, 9).toUpperCase();
+    localStorage.setItem(DEV_ID_KEY, id);
+  }
+  return id;
+}
+function money(n) { const x = Number(n); return Number.isFinite(x) ? Math.round((x + Number.EPSILON) * 100) / 100 : 0; }
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+function addDaysStr(days) { const d = new Date(); d.setDate(d.getDate() + days); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+function nowIso() { return new Date().toISOString(); }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+function getPairing() {
+  try {
+    return JSON.parse(localStorage.getItem(PAIR_KEY) || "null") || {
+      paired: false, role: "OWNER", branchCode: "LOC-MAIN", host: "", endpoint: "", token: ""
+    };
+  } catch (_) {
+    return { paired: false, role: "OWNER", branchCode: "LOC-MAIN", host: "", endpoint: "", token: "" };
+  }
+}
+function savePairing(p) { localStorage.setItem(PAIR_KEY, JSON.stringify(p)); }
+
+function getSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null") || {
+      role: "OWNER", ownerPin: "0000", staffPin: ""
+    };
+  } catch (_) {
+    return { role: "OWNER", ownerPin: "0000", staffPin: "" };
+  }
+}
+function saveSession(s) { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
+
+function loadDb() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DB_KEY) || "null");
+    if (raw && Array.isArray(raw.medicines)) return raw;
+  } catch (_) {}
+  return { medicines: [], batches: [], sales: [], credits: [], appliedEvents: [], outbox: [] };
+}
+let db = loadDb();
+function saveDb() { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+
+let activeTab = "sell";
+let scanMode = "PAIR";
+let scanStream = null;
+let scanTimer = null;
+
+function isOwner() {
+  return getSession().role === "OWNER";
+}
+
+function renderTop() {
+  const pair = getPairing();
+  const sess = getSession();
+  document.getElementById("topSub").textContent = pair.paired
+    ? `${pair.branchCode} • Linked: ${pair.endpoint}`
+    : `Standalone Mode • ${pair.branchCode}`;
+  document.getElementById("rolePill").textContent = sess.role === "OWNER" ? "Owner • Full" : "Staff • POS";
+}
+
+/* ==================== BIOMETRIC WITH SAFE PIN FALLBACK ==================== */
+function verifyOwnerWithBiometricOrPin(onSuccess) {
+  const sess = getSession();
+  const askPin = (reason) => {
+    const entered = prompt(`${reason}\nEnter Owner / Administrator PIN (default 0000):`);
+    if (entered !== null && entered.trim() === (sess.ownerPin || "0000")) {
+      sess.role = "OWNER";
+      saveSession(sess);
+      renderTop(); render();
+      toast("Owner clearance verified");
+      if (typeof onSuccess === "function") onSuccess();
+    } else if (entered !== null) {
+      alert("Invalid Owner PIN.");
+    }
+  };
+
+  if (window.AndroidBiometric && typeof window.AndroidBiometric.authenticate === "function") {
+    window.__bioCallback = (ok, status) => {
+      if (ok) {
+        sess.role = "OWNER";
+        saveSession(sess);
+        renderTop(); render();
+        toast("Biometric clearance verified");
+        if (typeof onSuccess === "function") onSuccess();
+      } else {
+        askPin(status === "UNAVAILABLE" ? "Biometric sensor unavailable on this device." : "Biometric verification cancelled.");
+      }
+    };
+    window.AndroidBiometric.authenticate("window.__bioCallback");
+  } else {
+    askPin("Verify Owner / Administrator clearance:");
+  }
+}
+
+function switchClearancePrompt() {
+  const sess = getSession();
+  if (sess.role === "OWNER") {
+    if (confirm("Switch terminal to restricted Staff / Dispenser mode?")) {
+      sess.role = "STAFF";
+      saveSession(sess);
+      if (activeTab === "admin") activeTab = "sell";
+      renderTop(); render();
+      toast("Switched to Staff / Dispenser mode");
+    }
+  } else {
+    verifyOwnerWithBiometricOrPin();
+  }
+}
+
+/* ==================== DUAL QR PAYLOAD PARSER & AUTO-DISCOVERY ==================== */
+function applyGatewayQrString(rawText) {
+  const txt = String(rawText || "").trim();
+  const parts = txt.split("|");
+
+  if (parts.length >= 6 && parts[0] === "SSEDDUME-POS") {
+    const role = parts[1].toUpperCase() === "OWNER" ? "OWNER" : "STAFF";
+    const endpoint = parts[4].replace(/\/+$/, "");
+    if (endpoint.includes("127.0.0.1") || endpoint.includes("localhost")) {
+      alert("Windows showed 127.0.0.1 instead of its hotspot IP. Connect both devices to the same Wi-Fi/hotspot and click 'Refresh LAN & Sync' on Windows first.");
+      return false;
+    }
+    const pair = {
+      paired: true,
+      role,
+      branchCode: parts[2] || "LOC-MAIN",
+      host: parts[3] || "STATION",
+      endpoint,
+      token: parts[5]
+    };
+    savePairing(pair);
+    const sess = getSession();
+    sess.role = role;
+    saveSession(sess);
+    renderTop(); render();
+    syncWithGateway();
+    toast(`Paired to ${pair.branchCode} (${role})`);
+    return true;
+  }
+
+  if (parts.length >= 4 && parts[0] === "SSEDDUME-WIN") {
+    const endpoint = parts[2].replace(/\/+$/, "");
+    const pair = {
+      paired: true,
+      role: "OWNER",
+      branchCode: "LOC-MAIN",
+      host: parts[1] || "STATION",
+      endpoint,
+      token: parts[3]
+    };
+    savePairing(pair);
+    renderTop(); render();
+    syncWithGateway();
+    toast(`Paired to ${pair.host}`);
+    return true;
+  }
+
+  alert("Invalid gateway QR code. Expected SSEDDUME-POS|... from the Windows station.");
+  return false;
+}
+
 async function autoDiscoverWindowsGateway() {
+  toast("Scanning hotspot/LAN for Windows Gateway...");
   const candidates = [];
   const commonHotspotHosts = [
     "192.168.137.1", "192.168.137.2", "192.168.137.10", "192.168.137.20",
@@ -35,3 +357,295 @@ async function autoDiscoverWindowsGateway() {
   alert("No SSEDDUME Windows Gateway responded automatically on common hotspot addresses. Scan the QR code or tap 'Paste / Enter Payload'.");
   return false;
 }
+
+/* ==================== GATEWAY SYNC (/api/events) ==================== */
+function emitMobileEvent(eventType, payload) {
+  const pair = getPairing();
+  const bCode = pair.branchCode || "LOC-MAIN";
+  const ev = {
+    event_id: `${bCode}-${getDevId()}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    branch_id: bCode,
+    device_id: getDevId(),
+    event_type: eventType,
+    payload
+  };
+  db.appliedEvents.push(ev.event_id);
+  db.outbox.push(ev);
+  saveDb();
+  syncWithGateway();
+}
+
+function applyRemoteEvent(ev) {
+  if (!ev || !ev.event_id) return false;
+  const pair = getPairing();
+  if (ev.branch_id && pair.branchCode && ev.branch_id !== pair.branchCode) return false;
+  if (db.appliedEvents.includes(ev.event_id)) return false;
+  db.appliedEvents.push(ev.event_id);
+
+  const p = ev.payload || {};
+  if (ev.event_type === "MED_UPSERT" && p.med) {
+    const i = db.medicines.findIndex(m => m.id === p.med.id);
+    if (i >= 0) Object.assign(db.medicines[i], p.med);
+    else db.medicines.push(p.med);
+  } else if (ev.event_type === "BATCH_GRN" && p.batch) {
+    if (!db.batches.some(b => b.id === p.batch.id)) db.batches.push(p.batch);
+  } else if (ev.event_type === "BATCH_DELTA" && p.batchId && Number.isInteger(p.delta)) {
+    const b = db.batches.find(x => x.id === p.batchId);
+    if (b) b.qty = Math.max(0, b.qty + p.delta);
+  } else if (ev.event_type === "STOCK_ADJUST" && p.batchId && Number.isInteger(p.newQty)) {
+    const b = db.batches.find(x => x.id === p.batchId);
+    if (b) b.qty = Math.max(0, p.newQty);
+  } else if (ev.event_type === "SALE_LINE" && p.sale) {
+    if (!db.sales.some(s => s.id === p.sale.id)) db.sales.unshift(p.sale);
+  } else if (ev.event_type === "SALE_VOID" && p.saleId) {
+    const s = db.sales.find(x => x.id === p.saleId);
+    if (s && !s.voided) {
+      s.voided = true;
+      const b = db.batches.find(x => x.id === s.batchId);
+      if (b) b.qty += s.qty;
+    }
+  }
+  return true;
+}
+
+async function syncWithGateway() {
+  const pair = getPairing();
+  if (!pair.paired || !pair.endpoint || !pair.token) return;
+  try {
+    if (db.outbox.length > 0) {
+      const postRes = await fetch(`${pair.endpoint}/api/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Pair-Token": pair.token },
+        body: JSON.stringify(db.outbox)
+      });
+      if (postRes.ok) {
+        db.outbox = [];
+        saveDb();
+      }
+    }
+    const getRes = await fetch(`${pair.endpoint}/api/events`, {
+      headers: { "X-Pair-Token": pair.token },
+      cache: "no-store"
+    });
+    if (getRes.ok) {
+      const events = await getRes.json();
+      let changed = false;
+      for (const ev of events) {
+        if (applyRemoteEvent(ev)) changed = true;
+      }
+      if (changed) {
+        saveDb();
+        render();
+        toast("Synced stock & sales with Windows");
+      }
+    }
+  } catch (_) {}
+}
+setInterval(syncWithGateway, 5000);
+
+/* ==================== CAMERA & MANUAL SCANNER ==================== */
+async function openScanner(mode) {
+  scanMode = mode;
+  document.getElementById("scanTitle").textContent = mode === "PAIR" ? "Scan Windows Gateway QR" : "Scan Medicine Barcode";
+  document.getElementById("scannerModal").style.display = "flex";
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    const vid = document.getElementById("scanVideo");
+    vid.srcObject = scanStream;
+    if ("BarcodeDetector" in window) {
+      const detector = new BarcodeDetector({ formats: ["qr_code", "ean_13", "ean_8", "code_128", "upc_a"] });
+      scanTimer = setInterval(async () => {
+        try {
+          const codes = await detector.detect(vid);
+          if (codes && codes.length > 0) {
+            const val = codes[0].rawValue;
+            stopScanner();
+            handleScannedValue(val);
+          }
+        } catch (_) {}
+      }, 350);
+    }
+  } catch (_) {}
+}
+
+function stopScanner() {
+  clearInterval(scanTimer);
+  scanTimer = null;
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+  }
+  document.getElementById("scannerModal").style.display = "none";
+}
+
+function manualQrEntry() {
+  const mode = scanMode;
+  stopScanner();
+  const val = prompt(mode === "PAIR"
+    ? "Paste Windows Pairing Payload (SSEDDUME-POS|...):"
+    : "Enter or scan barcode:");
+  if (val) handleScannedValue(val);
+}
+
+function handleScannedValue(val) {
+  if (scanMode === "PAIR") {
+    applyGatewayQrString(val);
+  } else {
+    const inp = document.getElementById("mSearch");
+    if (inp) { inp.value = val.trim(); filterMedsSelect(); }
+    toast(`Scanned: ${val.trim()}`);
+  }
+}
+
+function setTab(tab) {
+  if (tab === "admin" && !isOwner()) {
+    return verifyOwnerWithBiometricOrPin(() => { activeTab = "admin"; render(); });
+  }
+  activeTab = tab;
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  render();
+}
+
+function availQty(medId) {
+  return db.batches.filter(b => b.medId === medId && !b.quarantined && b.expiry > todayStr() && b.qty > 0)
+    .reduce((s, b) => s + b.qty, 0);
+}
+
+function render() {
+  const el = document.getElementById("appMain");
+  const pair = getPairing();
+  const okSales = db.sales.filter(s => !s.voided);
+  const cash = money(okSales.reduce((a, b) => a + money(b.cashPaid || 0), 0));
+  const mm = money(okSales.reduce((a, b) => a + money(b.mmPaid || 0), 0));
+  const exp30 = db.batches.filter(b => !b.quarantined && b.qty > 0 && b.expiry > todayStr() && b.expiry <= addDaysStr(30)).length;
+
+  if (activeTab === "sell") {
+    const meds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED");
+    const opts = meds.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)}</option>`).join("");
+    el.innerHTML = `
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-lbl">Cash Collected</div><div class="kpi-val">${cash.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-lbl">Mobile Money</div><div class="kpi-val">${mm.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-lbl">Outbox Queue</div><div class="kpi-val">${db.outbox.length}</div></div>
+        <div class="kpi"><div class="kpi-lbl">Expiring ≤ 30d</div><div class="kpi-val">${exp30}</div></div>
+      </div>
+
+      <div class="bridge-card">
+        <span class="tag ${pair.paired ? "ok" : "warn"}">${pair.paired ? `LINKED • ${esc(pair.branchCode)} (${esc(pair.role)})` : "WINDOWS GATEWAY UNPAIRED"}</span>
+        <h3 style="margin:2px 0 6px;">Secure Terminal &amp; Mobile POS Synchronization Gateway</h3>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;">
+          ${pair.paired
+            ? `Streaming to <b>${esc(pair.endpoint)}</b>. Outbox events: <b>${db.outbox.length}</b>.`
+            : "Scan the Windows Gateway QR code or tap Auto-Find Gateway on the same hotspot."}
+        </div>
+        <div class="row" style="margin-bottom:0;">
+          <button class="accent" onclick="openScanner('PAIR')">Scan Windows QR</button>
+          <button class="dark" onclick="autoDiscoverWindowsGateway()">Auto-Find Gateway</button>
+          <button class="ghost" onclick="syncWithGateway()">Sync Now</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Dispense Line (Strict FEFO)</h3>
+        <div class="row">
+          <input id="mSearch" type="text" placeholder="Search name or barcode..." oninput="filterMedsSelect()" style="flex:1;" />
+          <button class="dark" onclick="openScanner('BARCODE')">Scan Barcode</button>
+        </div>
+        <div class="row">
+          <select id="mSel" style="width:100%;">${opts || '<option value="">No permitted stock (sync or add GRN)</option>'}</select>
+        </div>
+        <div class="row">
+          <input id="mQty" type="number" min="1" value="1" style="width:86px;" />
+          <button class="ghost" onclick="bumpQty(1)">+1</button>
+          <button class="ghost" onclick="bumpQty(5)">+5</button>
+          <button class="ghost" onclick="bumpQty(10)">+10</button>
+          <button class="primary" style="flex:1;" onclick="quickDispense()">Dispense Cash</button>
+        </div>
+      </div>
+    `;
+  } else if (activeTab === "admin") {
+    el.innerHTML = `
+      <div class="card">
+        <h3>Owner / Administrator Clearance &amp; Credentials</h3>
+        <p style="font-size:13px;color:var(--muted);">Biometric prompts automatically fall back to your Owner PIN if cancelled or unavailable on device.</p>
+        <div class="row">
+          <button class="primary" onclick="verifyOwnerWithBiometricOrPin()">Test Biometric / PIN Verification</button>
+          <button class="ghost" onclick="changeMobileOwnerPin()">Change Owner PIN</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Windows Gateway Pairing</h3>
+        <div style="font-size:13px;margin-bottom:10px;">
+          Status: <b>${pair.paired ? `Paired (${esc(pair.branchCode)} • ${esc(pair.endpoint)})` : "Not Paired"}</b>
+        </div>
+        <div class="row">
+          <button class="accent" onclick="openScanner('PAIR')">Scan Windows QR</button>
+          <button class="dark" onclick="autoDiscoverWindowsGateway()">Auto-Find Gateway</button>
+          <button class="danger" onclick="unpairStation()">Unpair Station</button>
+        </div>
+      </div>
+    `;
+  } else {
+    el.innerHTML = `<div class="card"><h3>${esc(activeTab.toUpperCase())}</h3><p style="color:var(--muted);font-size:13px;">Medicines: <b>${db.medicines.length}</b> • Active Batches: <b>${db.batches.length}</b> • Sales: <b>${db.sales.length}</b></p><button class="primary" onclick="syncWithGateway()">Sync With Windows Station</button></div>`;
+  }
+}
+
+function bumpQty(d) {
+  const el = document.getElementById("mQty");
+  if (el) el.value = Math.max(1, (parseInt(el.value || "0", 10) || 0) + d);
+}
+function filterMedsSelect() {
+  const q = (document.getElementById("mSearch")?.value || "").trim().toLowerCase();
+  const sel = document.getElementById("mSel");
+  if (!sel) return;
+  const list = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && (!q || m.generic_name.toLowerCase().includes(q) || (m.barcode || "").toLowerCase().includes(q)));
+  sel.innerHTML = list.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)}</option>`).join("") || '<option value="">No match</option>';
+}
+function quickDispense() {
+  const med = db.medicines.find(m => m.id === document.getElementById("mSel")?.value);
+  const qty = parseInt(document.getElementById("mQty")?.value || "0", 10);
+  if (!med || qty <= 0) return alert("Select a medicine and valid quantity.");
+  if (qty > availQty(med.id)) return alert("Insufficient stock.");
+  let rem = qty;
+  const batches = db.batches.filter(b => b.medId === med.id && !b.quarantined && b.expiry > todayStr() && b.qty > 0).sort((a, b) => a.expiry.localeCompare(b.expiry));
+  for (const b of batches) {
+    if (rem <= 0) break;
+    const take = Math.min(b.qty, rem);
+    b.qty -= take;
+    rem -= take;
+    const sale = {
+      id: `S-${getDevId()}-${Date.now()}`, receiptId: `VCH-${Date.now()}`, time: nowIso(),
+      medId: med.id, medName: `${med.generic_name} (${med.strength})`, batchId: b.id, batchNo: b.batchNo,
+      qty: take, unitPrice: money(med.default_unit_price), total: money(take * money(med.default_unit_price)),
+      payMethod: "CASH", cashPaid: money(take * money(med.default_unit_price)), mmPaid: 0,
+      dispenser: getSession().role, voided: false
+    };
+    db.sales.unshift(sale);
+    emitMobileEvent("BATCH_DELTA", { batchId: b.id, delta: -take });
+    emitMobileEvent("SALE_LINE", { sale });
+  }
+  saveDb(); render(); toast("Dispensed & queued for Windows sync");
+}
+function changeMobileOwnerPin() {
+  verifyOwnerWithBiometricOrPin(() => {
+    const sess = getSession();
+    const next = prompt("Enter new 4-digit Owner PIN:", sess.ownerPin || "0000");
+    if (next && next.trim()) {
+      sess.ownerPin = next.trim();
+      saveSession(sess);
+      toast("Owner PIN updated");
+    }
+  });
+}
+function unpairStation() {
+  if (!confirm("Unpair this Android device from the Windows station?")) return;
+  savePairing({ paired: false, role: "OWNER", branchCode: "LOC-MAIN", host: "", endpoint: "", token: "" });
+  renderTop(); render(); toast("Station unpaired");
+}
+
+renderTop();
+render();
+syncWithGateway();
+</script>
+</body>
+</html>

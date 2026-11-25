@@ -75,7 +75,6 @@
 
     .alert { border-radius: 10px; padding: 9px 12px; margin-bottom: 10px; font-size: 12px; border: 1px solid transparent; }
     .alert-warn { background: var(--warn-soft); border-color: #fcd34d; color: #78350f; }
-    .alert-bad { background: var(--danger-soft); border-color: #fca5a5; color: #7f1d1d; }
 
     .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
     input, select, button {
@@ -133,7 +132,7 @@
       <div class="sub" id="topSub">Mobile POS Terminal • Offline-First</div>
     </div>
     <div style="display:flex;align-items:center;gap:6px;">
-      <span class="pill" id="rolePill">Owner • Full</span>
+      <span class="pill" id="rolePill">Owner • PIN/Standby</span>
       <button class="lock-btn" onclick="switchClearancePrompt()">Switch / PIN</button>
     </div>
   </div>
@@ -167,10 +166,10 @@
   <div id="toast"></div>
 
 <script>
-const BASE_DB_KEY = "sseddume_mobile_db_v5";
-const PAIR_KEY = "sseddume_mobile_pair_v5";
-const SESSION_KEY = "sseddume_mobile_session_v5";
-const DEV_ID_KEY = "sseddume_mobile_dev_id_v5";
+const BASE_DB_KEY = "sseddume_mobile_db_v6";
+const PAIR_KEY = "sseddume_mobile_pair_v6";
+const SESSION_KEY = "sseddume_mobile_session_v6";
+const DEV_ID_KEY = "sseddume_mobile_dev_id_v6";
 
 function getDevId() {
   let id = localStorage.getItem(DEV_ID_KEY);
@@ -214,10 +213,10 @@ function dbKeyForBranch() {
 function getSession() {
   try {
     return JSON.parse(localStorage.getItem(SESSION_KEY) || "null") || {
-      role: "OWNER", ownerPin: "0000"
+      role: "OWNER", ownerPin: "0000", biometricActive: false
     };
   } catch (_) {
-    return { role: "OWNER", ownerPin: "0000" };
+    return { role: "OWNER", ownerPin: "0000", biometricActive: false };
   }
 }
 function saveSession(s) { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
@@ -256,10 +255,12 @@ let scanStream = null;
 let scanTimer = null;
 
 function isOwner() { return getSession().role === "OWNER"; }
+
 function guardOwner(actionLabel = "this Owner action") {
   if (isOwner()) return true;
-  alert(`Owner / Administrator clearance required for ${actionLabel}.`);
-  return false;
+  let granted = false;
+  verifyOwnerWithBiometricOrPin(() => { granted = true; }, `Owner clearance required for ${actionLabel}.`);
+  return granted;
 }
 
 function addMobileAudit(action, detail) {
@@ -275,22 +276,21 @@ function renderTop() {
     ? `${pair.branchCode} • ${pair.endpoint}`
     : `Standalone • ${pair.branchCode}`;
   document.getElementById("rolePill").textContent = sess.role === "OWNER" ? "Owner • Full" : "Staff • POS";
-  const adminBtn = document.querySelector('.nav-btn[data-tab="admin"]');
-  if (adminBtn) adminBtn.style.opacity = sess.role === "OWNER" ? "1" : "0.65";
 }
 
-/* ==================== BIOMETRIC WITH SAFE PIN FALLBACK ==================== */
-function verifyOwnerWithBiometricOrPin(onSuccess) {
+/* ==================== OWNER CLEARANCE WITHOUT REQUIRING ACTIVE BIOMETRICS ==================== */
+function verifyOwnerWithBiometricOrPin(onSuccess, promptPrefix = "Verify Owner / Administrator clearance:") {
   const sess = getSession();
   const askPin = (reason) => {
     const entered = prompt(`${reason}\nEnter Owner / Administrator PIN (default 0000):`);
     if (entered !== null && entered.trim() === (sess.ownerPin || "0000")) {
       sess.role = "OWNER";
+      sess.biometricActive = false;
       saveSession(sess);
-      addMobileAudit("OWNER_UNLOCK", "Verified Owner clearance via PIN");
+      addMobileAudit("OWNER_PIN_AUTH", "Verified Owner clearance via PIN (biometrics inactive)");
       saveDb();
       renderTop(); render();
-      toast("Owner clearance verified");
+      toast("Owner clearance active (PIN)");
       if (typeof onSuccess === "function") onSuccess();
     } else if (entered !== null) {
       alert("Invalid Owner PIN.");
@@ -298,26 +298,32 @@ function verifyOwnerWithBiometricOrPin(onSuccess) {
   };
 
   if (window.AndroidBiometric && typeof window.AndroidBiometric.authenticate === "function") {
+    let handled = false;
     window.__bioCallback = (ok, status) => {
+      if (handled) return;
+      handled = true;
       if (ok) {
         sess.role = "OWNER";
+        sess.biometricActive = true;
         saveSession(sess);
-        addMobileAudit("OWNER_UNLOCK", "Verified Owner clearance via Biometric");
+        addMobileAudit("OWNER_BIO_AUTH", "Verified Owner clearance via Biometric");
         saveDb();
         renderTop(); render();
         toast("Biometric clearance verified");
         if (typeof onSuccess === "function") onSuccess();
       } else {
-        askPin(status === "UNAVAILABLE" ? "Biometric sensor unavailable on this device." : "Biometric verification cancelled.");
+        sess.biometricActive = false;
+        saveSession(sess);
+        askPin(status === "UNAVAILABLE" ? "Biometrics inactive/unavailable on device." : `${promptPrefix} (Biometrics bypassed)`);
       }
     };
     try {
       window.AndroidBiometric.authenticate("window.__bioCallback");
     } catch (_) {
-      askPin("Biometric prompt unavailable.");
+      askPin(`${promptPrefix} (Biometrics inactive)`);
     }
   } else {
-    askPin("Verify Owner / Administrator clearance:");
+    askPin(`${promptPrefix} (Biometrics inactive)`);
   }
 }
 
@@ -579,13 +585,6 @@ function handleScannedValue(val) {
 }
 
 function setTab(tab) {
-  if (tab === "admin" && !isOwner()) {
-    return verifyOwnerWithBiometricOrPin(() => {
-      activeTab = "admin";
-      document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === "admin"));
-      render();
-    });
-  }
   activeTab = tab;
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   render();
@@ -620,6 +619,7 @@ function render() {
 
 function renderSell(el) {
   const pair = getPairing();
+  const sess = getSession();
   const okSales = db.sales.filter(s => !s.voided);
   const cash = money(okSales.reduce((a, b) => a + money(b.cashPaid ?? (b.payMethod === "CASH" ? b.total : 0)), 0));
   const mm = money(okSales.reduce((a, b) => a + money(b.mmPaid ?? (b.payMethod === "MOBILE_MONEY" ? b.total : 0)), 0));
@@ -643,7 +643,6 @@ function renderSell(el) {
   `).join("") : `<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">Cart is empty. Add items using strict FEFO.</div>`;
 
   const cartTotal = money(basket.reduce((s, it) => s + money(it.qty * it.unitPrice), 0));
-  const canVoid = isOwner();
 
   const recentRows = db.sales.slice(0, 15).map(s => `
     <tr>
@@ -651,11 +650,13 @@ function renderSell(el) {
       <td><button class="ghost" onclick="openVoucher('${esc(s.receiptId || s.id)}')">${esc(s.receiptId || s.id)}</button> <strong>${esc(s.medName)}</strong></td>
       <td>${s.qty}</td>
       <td>${money(s.total).toFixed(2)} <span class="badge ok">${esc(s.payMethod)}</span></td>
-      <td>${s.voided ? '<span class="badge bad">VOID</span>' : `<button class="danger" style="min-height:28px;padding:3px 8px;font-size:11px;" ${canVoid ? "" : "disabled"} onclick="voidSale('${esc(s.id)}')">Void</button>`}</td>
+      <td>${s.voided ? '<span class="badge bad">VOID</span>' : `<button class="danger" style="min-height:28px;padding:3px 8px;font-size:11px;" onclick="voidSale('${esc(s.id)}')">Void</button>`}</td>
     </tr>
   `).join("") || `<tr><td colspan="5" style="color:var(--muted);">No sales yet.</td></tr>`;
 
   el.innerHTML = `
+    ${!sess.biometricActive ? `<div class="alert alert-warn">Biometrics not active — Owner powers and PIN verification remain available without biometrics.</div>` : ""}
+
     <div class="kpis">
       <div class="kpi"><div class="kpi-lbl">Cash Collected</div><div class="kpi-val">${cash.toFixed(2)}</div></div>
       <div class="kpi"><div class="kpi-lbl">Mobile Money</div><div class="kpi-val">${mm.toFixed(2)}</div></div>
@@ -1012,7 +1013,7 @@ function renderReports(el) {
     ? `<div class="card"><h3>Audit Trail (${db.audit.length})</h3><div class="table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Detail</th></tr></thead><tbody>${
         db.audit.slice(0, 30).map(a => `<tr><td>${esc(a.time.slice(0, 16).replace("T", " "))}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted);">No audit entries.</td></tr>`
       }</tbody></table></div></div>`
-    : `<div class="alert alert-warn">Switch to <b>Owner</b> clearance to view full audit logs.</div>`;
+    : `<div class="alert alert-warn">Switch to <b>Owner</b> clearance (via PIN) to view full audit logs.</div>`;
 
   el.innerHTML = `
     <div class="card">
@@ -1035,18 +1036,20 @@ function settleMobileCredit(id) {
 }
 
 function renderAdmin(el) {
-  if (!guardOwner("viewing Owner Administration")) {
-    activeTab = "sell";
-    return renderSell(el);
-  }
   const pair = getPairing();
+  const sess = getSession();
   el.innerHTML = `
+    <div class="alert alert-warn">Owner provisions operate cleanly with PIN verification even when biometrics are not active.</div>
+
     <div class="card">
       <h3>Owner Clearance &amp; Security</h3>
       <div class="row" style="margin-bottom:0;">
-        <button class="primary" onclick="verifyOwnerWithBiometricOrPin()">Verify Biometric / PIN</button>
+        <button class="primary" onclick="verifyOwnerWithBiometricOrPin()">Verify Owner PIN</button>
         <button class="ghost" onclick="changeMobileOwnerPin()">Change Owner PIN</button>
         <button class="ghost" onclick="exportMobileJson()">Export Branch JSON</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:8px;">
+        Current Mode: <b>${esc(sess.role)}</b> • Biometrics: <b>${sess.biometricActive ? "Active" : "Inactive (PIN Fallback Ready)"}</b>
       </div>
     </div>
 
@@ -1070,6 +1073,7 @@ function renderAdmin(el) {
 }
 
 async function remoteRotateWindowsKeys() {
+  if (!guardOwner("rotating Windows gateway keys")) return;
   const pair = getPairing();
   if (!pair.paired || !pair.endpoint || !pair.token) return alert("Pair with Windows first.");
   try {
@@ -1090,6 +1094,7 @@ async function remoteRotateWindowsKeys() {
 }
 
 async function remoteSetWindowsBranch() {
+  if (!guardOwner("updating Windows branch identity")) return;
   const pair = getPairing();
   if (!pair.paired || !pair.endpoint || !pair.token) return alert("Pair with Windows first.");
   const branchName = (prompt("New Location Name (e.g., SSEDDUME - MENGO):", pair.branchCode) || "").trim();
@@ -1134,7 +1139,7 @@ function changeMobileOwnerPin() {
       saveSession(sess);
       toast("Owner PIN updated");
     }
-  });
+  }, "Verify current Owner PIN before setting a new PIN:");
 }
 
 function unpairStation() {

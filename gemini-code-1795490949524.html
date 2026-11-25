@@ -26,25 +26,25 @@
       --radius: 14px;
     }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-    body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 78px; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 82px; }
 
     .topbar {
       background: linear-gradient(135deg, #0f172a, #115e59);
-      color: #fff; padding: 14px 16px; position: sticky; top: 0; z-index: 30;
+      color: #fff; padding: 13px 16px; position: sticky; top: 0; z-index: 30;
       display: flex; justify-content: space-between; align-items: center; gap: 10px;
     }
-    .brand { font-size: 15px; font-weight: 800; line-height: 1.25; }
+    .brand { font-size: 14.5px; font-weight: 800; line-height: 1.25; }
     .sub { font-size: 11px; color: #cbd5e1; margin-top: 3px; }
     .pill {
       background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.26);
-      color: #fff; padding: 5px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+      color: #fff; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap;
     }
     .lock-btn {
       background: #fff; color: #0f172a; border: none; border-radius: 10px;
-      padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+      padding: 7px 11px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
     }
 
-    .wrap { padding: 12px 14px; max-width: 720px; margin: 0 auto; }
+    .wrap { padding: 12px 14px; max-width: 760px; margin: 0 auto; }
     .card {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
       padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
@@ -54,7 +54,7 @@
     .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
     .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
     .kpi-lbl { font-size: 10.5px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-    .kpi-val { font-size: 19px; font-weight: 800; margin-top: 4px; }
+    .kpi-val { font-size: 18px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
 
     .bridge-card {
       background: linear-gradient(135deg, #f0f9ff, #f0fdfa);
@@ -67,10 +67,20 @@
     .tag.ok { background: var(--ok-soft); color: var(--ok); }
     .tag.warn { background: var(--warn-soft); color: var(--warn); }
 
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+    .ok { background: var(--ok-soft); color: var(--ok); }
+    .warn { background: var(--warn-soft); color: var(--warn); }
+    .bad { background: var(--danger-soft); color: var(--danger); }
+    .info { background: var(--accent-soft); color: var(--accent); }
+
+    .alert { border-radius: 10px; padding: 9px 12px; margin-bottom: 10px; font-size: 12px; border: 1px solid transparent; }
+    .alert-warn { background: var(--warn-soft); border-color: #fcd34d; color: #78350f; }
+    .alert-bad { background: var(--danger-soft); border-color: #fca5a5; color: #7f1d1d; }
+
     .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
     input, select, button {
-      min-height: 42px; padding: 8px 12px; border-radius: 10px;
-      border: 1px solid var(--border); font-size: 14px; background: #fff; color: var(--text);
+      min-height: 40px; padding: 7px 11px; border-radius: 10px;
+      border: 1px solid var(--border); font-size: 13.5px; background: #fff; color: var(--text);
     }
     button { font-weight: 700; cursor: pointer; }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -78,7 +88,12 @@
     button.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
     button.dark { background: #1e293b; color: #fff; border-color: #1e293b; }
     button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
-    button.ghost { background: var(--surface-2); color: var(--text); border-color: var(--border); min-height: 36px; font-size: 12.5px; }
+    button.ghost { background: var(--surface-2); color: var(--text); border-color: var(--border); min-height: 34px; padding: 4px 9px; font-size: 12px; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; background: #fff; }
+    th { background: var(--surface-2); color: var(--muted); font-size: 10.5px; text-transform: uppercase; padding: 8px 9px; border-bottom: 1px solid var(--border); text-align: left; }
+    td { padding: 8px 9px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; font-variant-numeric: tabular-nums; }
 
     .bottom-nav {
       position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
@@ -93,8 +108,8 @@
     .nav-btn.active { background: var(--primary-soft); color: var(--primary-dark); }
 
     .modal { display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.86); z-index: 100; align-items: center; justify-content: center; padding: 14px; }
-    .modal-box { background: #fff; border-radius: 14px; padding: 16px; width: 100%; max-width: 440px; }
-    video { width: 100%; border-radius: 10px; background: #000; max-height: 280px; object-fit: cover; }
+    .modal-box { background: #fff; border-radius: 14px; padding: 16px; width: 100%; max-width: 460px; max-height: 88vh; overflow-y: auto; }
+    video { width: 100%; border-radius: 10px; background: #000; max-height: 260px; object-fit: cover; }
 
     #toast {
       position: fixed; top: 72px; left: 50%; transform: translateX(-50%);
@@ -102,6 +117,13 @@
       font-size: 12.5px; font-weight: 700; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 200;
     }
     #toast.show { opacity: 1; }
+
+    @media print {
+      .topbar, .bottom-nav, .no-print, #toast { display: none !important; }
+      body { background: #fff; padding: 0; }
+      .modal { position: static; background: none; display: block !important; }
+      .modal-box { box-shadow: none; max-width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -111,7 +133,7 @@
       <div class="sub" id="topSub">Mobile POS Terminal • Offline-First</div>
     </div>
     <div style="display:flex;align-items:center;gap:6px;">
-      <span class="pill" id="rolePill">Owner</span>
+      <span class="pill" id="rolePill">Owner • Full</span>
       <button class="lock-btn" onclick="switchClearancePrompt()">Switch / PIN</button>
     </div>
   </div>
@@ -138,13 +160,17 @@
     </div>
   </div>
 
+  <div id="voucherModal" class="modal">
+    <div class="modal-box" id="voucherBox"></div>
+  </div>
+
   <div id="toast"></div>
 
 <script>
-const DB_KEY = "sseddume_mobile_db_v4";
-const PAIR_KEY = "sseddume_mobile_pair_v4";
-const SESSION_KEY = "sseddume_mobile_session_v4";
-const DEV_ID_KEY = "sseddume_mobile_dev_id_v4";
+const BASE_DB_KEY = "sseddume_mobile_db_v5";
+const PAIR_KEY = "sseddume_mobile_pair_v5";
+const SESSION_KEY = "sseddume_mobile_session_v5";
+const DEV_ID_KEY = "sseddume_mobile_dev_id_v5";
 
 function getDevId() {
   let id = localStorage.getItem(DEV_ID_KEY);
@@ -180,43 +206,77 @@ function getPairing() {
 }
 function savePairing(p) { localStorage.setItem(PAIR_KEY, JSON.stringify(p)); }
 
+function dbKeyForBranch() {
+  const code = getPairing().branchCode || "LOC-MAIN";
+  return `${BASE_DB_KEY}_${code}`;
+}
+
 function getSession() {
   try {
     return JSON.parse(localStorage.getItem(SESSION_KEY) || "null") || {
-      role: "OWNER", ownerPin: "0000", staffPin: ""
+      role: "OWNER", ownerPin: "0000"
     };
   } catch (_) {
-    return { role: "OWNER", ownerPin: "0000", staffPin: "" };
+    return { role: "OWNER", ownerPin: "0000" };
   }
 }
 function saveSession(s) { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
 
+function defaultMobileDb() {
+  return { medicines: [], batches: [], sales: [], credits: [], audit: [], appliedEvents: [], outbox: [] };
+}
+
 function loadDb() {
   try {
-    const raw = JSON.parse(localStorage.getItem(DB_KEY) || "null");
-    if (raw && Array.isArray(raw.medicines)) return raw;
+    const raw = JSON.parse(localStorage.getItem(dbKeyForBranch()) || "null");
+    if (raw && typeof raw === "object") {
+      const d = defaultMobileDb();
+      return {
+        ...d, ...raw,
+        medicines: Array.isArray(raw.medicines) ? raw.medicines : [],
+        batches: Array.isArray(raw.batches) ? raw.batches : [],
+        sales: Array.isArray(raw.sales) ? raw.sales : [],
+        credits: Array.isArray(raw.credits) ? raw.credits : [],
+        audit: Array.isArray(raw.audit) ? raw.audit : [],
+        appliedEvents: Array.isArray(raw.appliedEvents) ? raw.appliedEvents : [],
+        outbox: Array.isArray(raw.outbox) ? raw.outbox : []
+      };
+    }
   } catch (_) {}
-  return { medicines: [], batches: [], sales: [], credits: [], appliedEvents: [], outbox: [] };
+  return defaultMobileDb();
 }
+
 let db = loadDb();
-function saveDb() { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+function saveDb() { localStorage.setItem(dbKeyForBranch(), JSON.stringify(db)); }
 
 let activeTab = "sell";
+let basket = [];
 let scanMode = "PAIR";
 let scanStream = null;
 let scanTimer = null;
 
-function isOwner() {
-  return getSession().role === "OWNER";
+function isOwner() { return getSession().role === "OWNER"; }
+function guardOwner(actionLabel = "this Owner action") {
+  if (isOwner()) return true;
+  alert(`Owner / Administrator clearance required for ${actionLabel}.`);
+  return false;
+}
+
+function addMobileAudit(action, detail) {
+  const bCode = getPairing().branchCode || "LOC-MAIN";
+  db.audit.unshift({ time: nowIso(), branchCode: bCode, actor: getSession().role, action, detail });
+  if (db.audit.length > 500) db.audit = db.audit.slice(0, 500);
 }
 
 function renderTop() {
   const pair = getPairing();
   const sess = getSession();
   document.getElementById("topSub").textContent = pair.paired
-    ? `${pair.branchCode} • Linked: ${pair.endpoint}`
-    : `Standalone Mode • ${pair.branchCode}`;
+    ? `${pair.branchCode} • ${pair.endpoint}`
+    : `Standalone • ${pair.branchCode}`;
   document.getElementById("rolePill").textContent = sess.role === "OWNER" ? "Owner • Full" : "Staff • POS";
+  const adminBtn = document.querySelector('.nav-btn[data-tab="admin"]');
+  if (adminBtn) adminBtn.style.opacity = sess.role === "OWNER" ? "1" : "0.65";
 }
 
 /* ==================== BIOMETRIC WITH SAFE PIN FALLBACK ==================== */
@@ -227,6 +287,8 @@ function verifyOwnerWithBiometricOrPin(onSuccess) {
     if (entered !== null && entered.trim() === (sess.ownerPin || "0000")) {
       sess.role = "OWNER";
       saveSession(sess);
+      addMobileAudit("OWNER_UNLOCK", "Verified Owner clearance via PIN");
+      saveDb();
       renderTop(); render();
       toast("Owner clearance verified");
       if (typeof onSuccess === "function") onSuccess();
@@ -240,6 +302,8 @@ function verifyOwnerWithBiometricOrPin(onSuccess) {
       if (ok) {
         sess.role = "OWNER";
         saveSession(sess);
+        addMobileAudit("OWNER_UNLOCK", "Verified Owner clearance via Biometric");
+        saveDb();
         renderTop(); render();
         toast("Biometric clearance verified");
         if (typeof onSuccess === "function") onSuccess();
@@ -247,7 +311,11 @@ function verifyOwnerWithBiometricOrPin(onSuccess) {
         askPin(status === "UNAVAILABLE" ? "Biometric sensor unavailable on this device." : "Biometric verification cancelled.");
       }
     };
-    window.AndroidBiometric.authenticate("window.__bioCallback");
+    try {
+      window.AndroidBiometric.authenticate("window.__bioCallback");
+    } catch (_) {
+      askPin("Biometric prompt unavailable.");
+    }
   } else {
     askPin("Verify Owner / Administrator clearance:");
   }
@@ -289,6 +357,7 @@ function applyGatewayQrString(rawText) {
       token: parts[5]
     };
     savePairing(pair);
+    db = loadDb();
     const sess = getSession();
     sess.role = role;
     saveSession(sess);
@@ -309,6 +378,7 @@ function applyGatewayQrString(rawText) {
       token: parts[3]
     };
     savePairing(pair);
+    db = loadDb();
     renderTop(); render();
     syncWithGateway();
     toast(`Paired to ${pair.host}`);
@@ -354,11 +424,11 @@ async function autoDiscoverWindowsGateway() {
     } catch (_) {}
   }
 
-  alert("No SSEDDUME Windows Gateway responded automatically on common hotspot addresses. Scan the QR code or tap 'Paste / Enter Payload'.");
+  alert("No SSEDDUME Windows Gateway responded automatically. Scan the QR code or tap 'Paste / Enter Payload'.");
   return false;
 }
 
-/* ==================== GATEWAY SYNC (/api/events) ==================== */
+/* ==================== GATEWAY SYNC (/api/events & /api/admin/*) ==================== */
 function emitMobileEvent(eventType, payload) {
   const pair = getPairing();
   const bCode = pair.branchCode || "LOC-MAIN";
@@ -370,6 +440,7 @@ function emitMobileEvent(eventType, payload) {
     payload
   };
   db.appliedEvents.push(ev.event_id);
+  if (db.appliedEvents.length > 8000) db.appliedEvents = db.appliedEvents.slice(-8000);
   db.outbox.push(ev);
   saveDb();
   syncWithGateway();
@@ -400,10 +471,14 @@ function applyRemoteEvent(ev) {
   } else if (ev.event_type === "SALE_VOID" && p.saleId) {
     const s = db.sales.find(x => x.id === p.saleId);
     if (s && !s.voided) {
-      s.voided = true;
+      s.voided = true; s.cashPaid = 0; s.mmPaid = 0;
       const b = db.batches.find(x => x.id === s.batchId);
       if (b) b.qty += s.qty;
     }
+  } else if (ev.event_type === "CREDIT_UPSERT" && p.credit) {
+    const idx = db.credits.findIndex(c => c.id === p.credit.id);
+    if (idx >= 0) Object.assign(db.credits[idx], p.credit);
+    else db.credits.unshift(p.credit);
   }
   return true;
 }
@@ -491,105 +566,171 @@ function handleScannedValue(val) {
   if (scanMode === "PAIR") {
     applyGatewayQrString(val);
   } else {
+    const code = val.trim();
+    if (activeTab !== "sell") {
+      activeTab = "sell";
+      document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === "sell"));
+      render();
+    }
     const inp = document.getElementById("mSearch");
-    if (inp) { inp.value = val.trim(); filterMedsSelect(); }
-    toast(`Scanned: ${val.trim()}`);
+    if (inp) { inp.value = code; filterMedsSelect(); }
+    toast(`Scanned: ${code}`);
   }
 }
 
 function setTab(tab) {
   if (tab === "admin" && !isOwner()) {
-    return verifyOwnerWithBiometricOrPin(() => { activeTab = "admin"; render(); });
+    return verifyOwnerWithBiometricOrPin(() => {
+      activeTab = "admin";
+      document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === "admin"));
+      render();
+    });
   }
   activeTab = tab;
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   render();
 }
 
+/* ==================== STOCK & FEFO HELPERS ==================== */
+function batchState(b) {
+  if (b.quarantined) return "QUARANTINED";
+  if (b.expiry < todayStr()) return "EXPIRED";
+  if (b.expiry === todayStr()) return "EXPIRES_TODAY";
+  if (b.qty <= 0) return "DEPLETED";
+  return "ACTIVE";
+}
+function isEligible(b) { return batchState(b) === "ACTIVE"; }
 function availQty(medId) {
-  return db.batches.filter(b => b.medId === medId && !b.quarantined && b.expiry > todayStr() && b.qty > 0)
-    .reduce((s, b) => s + b.qty, 0);
+  return db.batches.filter(b => b.medId === medId && isEligible(b)).reduce((s, b) => s + b.qty, 0);
+}
+function openCreditTotal() {
+  return money(db.credits.filter(c => !c.settled).reduce((s, c) => s + money(c.balance), 0));
 }
 
+/* ==================== RENDER MODULES ==================== */
 function render() {
   const el = document.getElementById("appMain");
-  const pair = getPairing();
-  const okSales = db.sales.filter(s => !s.voided);
-  const cash = money(okSales.reduce((a, b) => a + money(b.cashPaid || 0), 0));
-  const mm = money(okSales.reduce((a, b) => a + money(b.mmPaid || 0), 0));
-  const exp30 = db.batches.filter(b => !b.quarantined && b.qty > 0 && b.expiry > todayStr() && b.expiry <= addDaysStr(30)).length;
-
-  if (activeTab === "sell") {
-    const meds = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED");
-    const opts = meds.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)}</option>`).join("");
-    el.innerHTML = `
-      <div class="kpis">
-        <div class="kpi"><div class="kpi-lbl">Cash Collected</div><div class="kpi-val">${cash.toFixed(2)}</div></div>
-        <div class="kpi"><div class="kpi-lbl">Mobile Money</div><div class="kpi-val">${mm.toFixed(2)}</div></div>
-        <div class="kpi"><div class="kpi-lbl">Outbox Queue</div><div class="kpi-val">${db.outbox.length}</div></div>
-        <div class="kpi"><div class="kpi-lbl">Expiring ≤ 30d</div><div class="kpi-val">${exp30}</div></div>
-      </div>
-
-      <div class="bridge-card">
-        <span class="tag ${pair.paired ? "ok" : "warn"}">${pair.paired ? `LINKED • ${esc(pair.branchCode)} (${esc(pair.role)})` : "WINDOWS GATEWAY UNPAIRED"}</span>
-        <h3 style="margin:2px 0 6px;">Secure Terminal &amp; Mobile POS Synchronization Gateway</h3>
-        <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;">
-          ${pair.paired
-            ? `Streaming to <b>${esc(pair.endpoint)}</b>. Outbox events: <b>${db.outbox.length}</b>.`
-            : "Scan the Windows Gateway QR code or tap Auto-Find Gateway on the same hotspot."}
-        </div>
-        <div class="row" style="margin-bottom:0;">
-          <button class="accent" onclick="openScanner('PAIR')">Scan Windows QR</button>
-          <button class="dark" onclick="autoDiscoverWindowsGateway()">Auto-Find Gateway</button>
-          <button class="ghost" onclick="syncWithGateway()">Sync Now</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Dispense Line (Strict FEFO)</h3>
-        <div class="row">
-          <input id="mSearch" type="text" placeholder="Search name or barcode..." oninput="filterMedsSelect()" style="flex:1;" />
-          <button class="dark" onclick="openScanner('BARCODE')">Scan Barcode</button>
-        </div>
-        <div class="row">
-          <select id="mSel" style="width:100%;">${opts || '<option value="">No permitted stock (sync or add GRN)</option>'}</select>
-        </div>
-        <div class="row">
-          <input id="mQty" type="number" min="1" value="1" style="width:86px;" />
-          <button class="ghost" onclick="bumpQty(1)">+1</button>
-          <button class="ghost" onclick="bumpQty(5)">+5</button>
-          <button class="ghost" onclick="bumpQty(10)">+10</button>
-          <button class="primary" style="flex:1;" onclick="quickDispense()">Dispense Cash</button>
-        </div>
-      </div>
-    `;
-  } else if (activeTab === "admin") {
-    el.innerHTML = `
-      <div class="card">
-        <h3>Owner / Administrator Clearance &amp; Credentials</h3>
-        <p style="font-size:13px;color:var(--muted);">Biometric prompts automatically fall back to your Owner PIN if cancelled or unavailable on device.</p>
-        <div class="row">
-          <button class="primary" onclick="verifyOwnerWithBiometricOrPin()">Test Biometric / PIN Verification</button>
-          <button class="ghost" onclick="changeMobileOwnerPin()">Change Owner PIN</button>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Windows Gateway Pairing</h3>
-        <div style="font-size:13px;margin-bottom:10px;">
-          Status: <b>${pair.paired ? `Paired (${esc(pair.branchCode)} • ${esc(pair.endpoint)})` : "Not Paired"}</b>
-        </div>
-        <div class="row">
-          <button class="accent" onclick="openScanner('PAIR')">Scan Windows QR</button>
-          <button class="dark" onclick="autoDiscoverWindowsGateway()">Auto-Find Gateway</button>
-          <button class="danger" onclick="unpairStation()">Unpair Station</button>
-        </div>
-      </div>
-    `;
-  } else {
-    el.innerHTML = `<div class="card"><h3>${esc(activeTab.toUpperCase())}</h3><p style="color:var(--muted);font-size:13px;">Medicines: <b>${db.medicines.length}</b> • Active Batches: <b>${db.batches.length}</b> • Sales: <b>${db.sales.length}</b></p><button class="primary" onclick="syncWithGateway()">Sync With Windows Station</button></div>`;
-  }
+  if (activeTab === "stock") renderStock(el);
+  else if (activeTab === "meds") renderMeds(el);
+  else if (activeTab === "reports") renderReports(el);
+  else if (activeTab === "admin") renderAdmin(el);
+  else renderSell(el);
+  renderTop();
 }
 
+function renderSell(el) {
+  const pair = getPairing();
+  const okSales = db.sales.filter(s => !s.voided);
+  const cash = money(okSales.reduce((a, b) => a + money(b.cashPaid ?? (b.payMethod === "CASH" ? b.total : 0)), 0));
+  const mm = money(okSales.reduce((a, b) => a + money(b.mmPaid ?? (b.payMethod === "MOBILE_MONEY" ? b.total : 0)), 0));
+  const cr = openCreditTotal();
+  const exp30 = db.batches.filter(b => !b.quarantined && b.qty > 0 && b.expiry > todayStr() && b.expiry <= addDaysStr(30)).length;
+
+  const usable = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED");
+  const opts = usable.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)} @${money(m.default_unit_price).toFixed(2)}</option>`).join("");
+
+  const cartHtml = basket.length ? basket.map((it, i) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);margin-bottom:6px;">
+      <div>
+        <strong>${esc(it.medName)}</strong> &times; ${it.qty} ${esc(it.baseUnit)} @ ${money(it.unitPrice).toFixed(2)}
+        ${it.dosage ? `<div style="font-size:11.5px;color:var(--muted);">Directions: ${esc(it.dosage)}</div>` : ""}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <strong>${money(it.qty * it.unitPrice).toFixed(2)}</strong>
+        <button class="ghost" onclick="removeCartItem(${i})">✕</button>
+      </div>
+    </div>
+  `).join("") : `<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">Cart is empty. Add items using strict FEFO.</div>`;
+
+  const cartTotal = money(basket.reduce((s, it) => s + money(it.qty * it.unitPrice), 0));
+  const canVoid = isOwner();
+
+  const recentRows = db.sales.slice(0, 15).map(s => `
+    <tr>
+      <td>${esc(s.time.slice(0, 16).replace("T", " "))}</td>
+      <td><button class="ghost" onclick="openVoucher('${esc(s.receiptId || s.id)}')">${esc(s.receiptId || s.id)}</button> <strong>${esc(s.medName)}</strong></td>
+      <td>${s.qty}</td>
+      <td>${money(s.total).toFixed(2)} <span class="badge ok">${esc(s.payMethod)}</span></td>
+      <td>${s.voided ? '<span class="badge bad">VOID</span>' : `<button class="danger" style="min-height:28px;padding:3px 8px;font-size:11px;" ${canVoid ? "" : "disabled"} onclick="voidSale('${esc(s.id)}')">Void</button>`}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="5" style="color:var(--muted);">No sales yet.</td></tr>`;
+
+  el.innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-lbl">Cash Collected</div><div class="kpi-val">${cash.toFixed(2)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Mobile Money</div><div class="kpi-val">${mm.toFixed(2)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Open Credit</div><div class="kpi-val">${cr.toFixed(2)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Expiring ≤ 30d</div><div class="kpi-val">${exp30}</div></div>
+    </div>
+
+    <div class="bridge-card">
+      <span class="tag ${pair.paired ? "ok" : "warn"}">${pair.paired ? `LINKED • ${esc(pair.branchCode)} (${esc(pair.role)})` : "WINDOWS GATEWAY UNPAIRED"}</span>
+      <h3 style="margin:2px 0 6px;">Secure Terminal &amp; Mobile POS Synchronization Gateway</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">
+        ${pair.paired
+          ? `Streaming to <b>${esc(pair.endpoint)}</b>. Queued outbox: <b>${db.outbox.length}</b>.`
+          : "Scan the Windows Gateway QR code or tap Auto-Find Gateway on the same hotspot."}
+      </div>
+      <div class="row" style="margin-bottom:0;">
+        <button class="accent" onclick="openScanner('PAIR')">Scan Windows QR</button>
+        <button class="dark" onclick="autoDiscoverWindowsGateway()">Auto-Find Gateway</button>
+        <button class="ghost" onclick="syncWithGateway()">Sync Now</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Dispense Line (Strict FEFO)</h3>
+      <div class="row">
+        <input id="mSearch" type="text" placeholder="Search name or barcode..." oninput="filterMedsSelect()" style="flex:1;" />
+        <button class="dark" onclick="openScanner('BARCODE')">Scan Barcode</button>
+      </div>
+      <div class="row">
+        <select id="mSel" onchange="onPickSellMed()" style="width:100%;">${opts || '<option value="">No permitted stock (sync or add GRN)</option>'}</select>
+      </div>
+      <div class="row">
+        <input id="mQty" type="number" min="1" value="1" style="width:78px;" />
+        <button class="ghost" onclick="bumpQty(1)">+1</button>
+        <button class="ghost" onclick="bumpQty(5)">+5</button>
+        <button class="ghost" onclick="bumpQty(10)">+10</button>
+        <input id="mPrice" type="number" min="0" step="0.01" placeholder="Unit Price" style="width:110px;" />
+      </div>
+      <div class="row">
+        <input id="mDosage" type="text" placeholder="Regimen / directions (optional)" style="flex:1;" />
+        <button class="dark" onclick="addToCart()">+ Cart</button>
+        <button class="primary" onclick="quickDispenseDirect()">Dispense Cash</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Dispensing Cart (${basket.length}) — Total: ${cartTotal.toFixed(2)}</h3>
+      ${cartHtml}
+      <div class="row" style="margin-bottom:0;">
+        <select id="cartPay" onchange="renderCartPayExtra()">
+          <option value="CASH">CASH</option>
+          <option value="MOBILE_MONEY">MOBILE_MONEY</option>
+          <option value="SPLIT">SPLIT (Cash + MM)</option>
+          <option value="CREDIT">CREDIT</option>
+        </select>
+        <button class="primary" style="flex:1;" onclick="checkoutCart()">Complete Voucher</button>
+      </div>
+      <div class="row" id="cartPayExtra" style="margin-top:8px;margin-bottom:0;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Recent Vouchers</h3>
+      <div class="table-wrap">
+        <table><thead><tr><th>Time</th><th>Voucher &amp; Item</th><th>Qty</th><th>Amount</th><th>Action</th></tr></thead><tbody>${recentRows}</tbody></table>
+      </div>
+    </div>
+  `;
+  onPickSellMed();
+}
+
+function onPickSellMed() {
+  const m = db.medicines.find(x => x.id === document.getElementById("mSel")?.value);
+  const p = document.getElementById("mPrice");
+  if (m && p && Number(m.default_unit_price) > 0) p.value = money(m.default_unit_price);
+}
 function bumpQty(d) {
   const el = document.getElementById("mQty");
   if (el) el.value = Math.max(1, (parseInt(el.value || "0", 10) || 0) + d);
@@ -598,34 +739,392 @@ function filterMedsSelect() {
   const q = (document.getElementById("mSearch")?.value || "").trim().toLowerCase();
   const sel = document.getElementById("mSel");
   if (!sel) return;
-  const list = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && (!q || m.generic_name.toLowerCase().includes(q) || (m.barcode || "").toLowerCase().includes(q)));
-  sel.innerHTML = list.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)}</option>`).join("") || '<option value="">No match</option>';
+  const list = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && (!q || m.generic_name.toLowerCase().includes(q) || (m.brand_name || "").toLowerCase().includes(q) || (m.barcode || "").toLowerCase().includes(q)));
+  sel.innerHTML = list.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)} @${money(m.default_unit_price).toFixed(2)}</option>`).join("") || '<option value="">No match</option>';
+  onPickSellMed();
 }
-function quickDispense() {
+function removeCartItem(i) { basket.splice(i, 1); render(); }
+function renderCartPayExtra() {
+  const mode = document.getElementById("cartPay")?.value || "CASH";
+  const box = document.getElementById("cartPayExtra");
+  if (!box) return;
+  if (mode === "SPLIT") box.innerHTML = `<input id="cSpCash" type="number" step="0.01" placeholder="Cash" style="width:105px;" /><input id="cSpMm" type="number" step="0.01" placeholder="MM" style="width:105px;" /><input id="cSpRef" type="text" placeholder="MM Ref" style="flex:1;" />`;
+  else if (mode === "MOBILE_MONEY") box.innerHTML = `<input id="cSpRef" type="text" placeholder="MM Ref / Phone" style="flex:1;" />`;
+  else if (mode === "CREDIT") box.innerHTML = `<input id="cCrCust" type="text" placeholder="Patient / Account *" style="flex:1;" /><input id="cCrDep" type="number" step="0.01" placeholder="Deposit" style="width:105px;" />`;
+  else box.innerHTML = "";
+}
+function addToCart() {
   const med = db.medicines.find(m => m.id === document.getElementById("mSel")?.value);
   const qty = parseInt(document.getElementById("mQty")?.value || "0", 10);
-  if (!med || qty <= 0) return alert("Select a medicine and valid quantity.");
-  if (qty > availQty(med.id)) return alert("Insufficient stock.");
-  let rem = qty;
-  const batches = db.batches.filter(b => b.medId === med.id && !b.quarantined && b.expiry > todayStr() && b.qty > 0).sort((a, b) => a.expiry.localeCompare(b.expiry));
-  for (const b of batches) {
-    if (rem <= 0) break;
-    const take = Math.min(b.qty, rem);
-    b.qty -= take;
-    rem -= take;
-    const sale = {
-      id: `S-${getDevId()}-${Date.now()}`, receiptId: `VCH-${Date.now()}`, time: nowIso(),
-      medId: med.id, medName: `${med.generic_name} (${med.strength})`, batchId: b.id, batchNo: b.batchNo,
-      qty: take, unitPrice: money(med.default_unit_price), total: money(take * money(med.default_unit_price)),
-      payMethod: "CASH", cashPaid: money(take * money(med.default_unit_price)), mmPaid: 0,
-      dispenser: getSession().role, voided: false
-    };
-    db.sales.unshift(sale);
-    emitMobileEvent("BATCH_DELTA", { batchId: b.id, delta: -take });
-    emitMobileEvent("SALE_LINE", { sale });
-  }
-  saveDb(); render(); toast("Dispensed & queued for Windows sync");
+  const unitPrice = money(parseFloat(document.getElementById("mPrice")?.value || med?.default_unit_price || "0"));
+  const dosage = (document.getElementById("mDosage")?.value || "").trim();
+  if (!med || med.nda_schedule === "RESTRICTED") return alert("Select an authorized preparation.");
+  if (!Number.isInteger(qty) || qty <= 0) return alert("Enter a valid quantity.");
+  const inCart = basket.filter(x => x.medId === med.id).reduce((s, x) => s + x.qty, 0);
+  if (qty + inCart > availQty(med.id)) return alert(`Only ${availQty(med.id)} ${med.base_unit} available.`);
+  basket.push({ medId: med.id, medName: `${med.generic_name}${med.strength ? " (" + med.strength + ")" : ""}`, baseUnit: med.base_unit, qty, unitPrice, dosage });
+  render(); toast("Added to cart");
 }
+function executeSaleLines(lines, payMethod, cashPaid, mmPaid, payRef, crCust, crBal) {
+  const bCode = getPairing().branchCode || "LOC-MAIN";
+  const rcpId = `VCH-${bCode}-${Date.now()}`;
+  const grand = money(lines.reduce((s, it) => s + money(it.qty * it.unitPrice), 0));
+  for (const it of lines) {
+    let rem = it.qty;
+    const batches = db.batches.filter(b => b.medId === it.medId && isEligible(b)).sort((a, b) => a.expiry.localeCompare(b.expiry));
+    for (const b of batches) {
+      if (rem <= 0) break;
+      const take = Math.min(b.qty, rem);
+      b.qty = Math.max(0, b.qty - take);
+      rem -= take;
+      const lTot = money(take * it.unitPrice);
+      const ratio = grand > 0 ? lTot / grand : 0;
+      const sale = {
+        id: `S-${bCode}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        branchCode: bCode, receiptId: rcpId, time: nowIso(),
+        medId: it.medId, medName: it.medName, batchId: b.id, batchNo: b.batchNo,
+        qty: take, unitPrice: it.unitPrice, total: lTot,
+        payMethod, cashPaid: money(cashPaid * ratio), mmPaid: money(mmPaid * ratio),
+        payRef: payRef || (crCust ? `Credit: ${crCust}` : ""),
+        dosage: it.dosage, dispenser: getSession().role, voided: false
+      };
+      db.sales.unshift(sale);
+      emitMobileEvent("BATCH_DELTA", { batchId: b.id, delta: -take });
+      emitMobileEvent("SALE_LINE", { sale });
+    }
+    addMobileAudit("DISPENSE", `[${rcpId}] ${it.qty} ${it.baseUnit} ${it.medName} (${payMethod})`);
+  }
+  if (payMethod === "CREDIT" && crBal > 0) {
+    const cr = { id: `CRD-${bCode}-${Date.now()}`, branchCode: bCode, receiptId: rcpId, time: nowIso(), customer: crCust, total: grand, paid: cashPaid, balance: crBal, settled: false };
+    db.credits.unshift(cr);
+    emitMobileEvent("CREDIT_UPSERT", { credit: cr });
+  }
+  saveDb(); render(); openVoucher(rcpId);
+}
+function quickDispenseDirect() {
+  const med = db.medicines.find(m => m.id === document.getElementById("mSel")?.value);
+  const qty = parseInt(document.getElementById("mQty")?.value || "0", 10);
+  const unitPrice = money(parseFloat(document.getElementById("mPrice")?.value || med?.default_unit_price || "0"));
+  const dosage = (document.getElementById("mDosage")?.value || "").trim();
+  if (!med || med.nda_schedule === "RESTRICTED" || qty <= 0) return alert("Select a medicine and valid quantity.");
+  if (qty > availQty(med.id)) return alert("Insufficient eligible stock.");
+  const line = { medId: med.id, medName: `${med.generic_name}${med.strength ? " (" + med.strength + ")" : ""}`, baseUnit: med.base_unit, qty, unitPrice, dosage };
+  const total = money(qty * unitPrice);
+  executeSaleLines([line], "CASH", total, 0, "", "", 0);
+}
+function checkoutCart() {
+  if (!basket.length) return alert("Dispensing cart is empty.");
+  const grand = money(basket.reduce((s, x) => s + money(x.qty * x.unitPrice), 0));
+  const payMethod = document.getElementById("cartPay")?.value || "CASH";
+  const payRef = (document.getElementById("cSpRef")?.value || "").trim();
+  let cashPaid = 0, mmPaid = 0, crCust = "", crBal = 0;
+  if (payMethod === "CASH") cashPaid = grand;
+  else if (payMethod === "MOBILE_MONEY") mmPaid = grand;
+  else if (payMethod === "SPLIT") {
+    cashPaid = money(parseFloat(document.getElementById("cSpCash")?.value || "0"));
+    mmPaid = money(parseFloat(document.getElementById("cSpMm")?.value || "0"));
+    if (Math.abs(money(cashPaid + mmPaid) - grand) >= 0.01) return alert("Split cash + MM must equal cart total.");
+  } else if (payMethod === "CREDIT") {
+    crCust = (document.getElementById("cCrCust")?.value || "").trim();
+    const dep = money(parseFloat(document.getElementById("cCrDep")?.value || "0"));
+    if (!crCust) return alert("Enter customer / account name for credit.");
+    if (dep < 0 || dep >= grand) return alert("Deposit must be >= 0 and less than total.");
+    cashPaid = dep;
+    crBal = money(grand - dep);
+  }
+  const lines = [...basket];
+  basket = [];
+  executeSaleLines(lines, payMethod, cashPaid, mmPaid, payRef, crCust, crBal);
+}
+function voidSale(id) {
+  if (!guardOwner("voiding dispensing vouchers")) return;
+  const s = db.sales.find(x => x.id === id);
+  if (!s || s.voided) return;
+  const reason = (prompt("Reason for voiding voucher:") || "").trim();
+  if (!reason) return alert("Void reason is required.");
+  s.voided = true; s.cashPaid = 0; s.mmPaid = 0;
+  const b = db.batches.find(x => x.id === s.batchId);
+  if (b) b.qty += s.qty;
+  emitMobileEvent("SALE_VOID", { saleId: s.id });
+  addMobileAudit("VOID_VOUCHER", `Voided ${s.id} (${s.medName}) — ${reason}`);
+  saveDb(); render(); toast("Voucher voided");
+}
+function openVoucher(key) {
+  const lines = db.sales.filter(s => (s.receiptId || s.id) === key);
+  if (!lines.length) return;
+  const first = lines[0];
+  const tot = money(lines.filter(l => !l.voided).reduce((a, b) => a + money(b.total), 0));
+  document.getElementById("voucherBox").innerHTML = `
+    <h3 style="margin:0 0 4px;">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Branch: <b>${esc(getPairing().branchCode)}</b> • Voucher: <b>${esc(key)}</b><br/>${esc(first.time.slice(0, 16).replace("T", " "))} • ${esc(first.dispenser)}</div>
+    <table style="margin-bottom:10px;"><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${lines.map(l => `<tr><td>${esc(l.medName)} (${esc(l.batchNo)})${l.dosage ? `<br><small>${esc(l.dosage)}</small>` : ""}</td><td>${l.qty}</td><td>${money(l.total).toFixed(2)}${l.voided ? " (VOID)" : ""}</td></tr>`).join("")}</tbody></table>
+    <div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:12px;"><span>Total (${esc(first.payMethod)})</span><span>${tot.toFixed(2)}</span></div>
+    <div class="row no-print" style="justify-content:flex-end;margin:0;"><button class="ghost" onclick="window.print()">Print</button><button class="primary" onclick="document.getElementById('voucherModal').style.display='none'">Close</button></div>
+  `;
+  document.getElementById("voucherModal").style.display = "flex";
+}
+
+function renderStock(el) {
+  const opts = db.medicines.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} (${esc(m.base_unit)})</option>`).join("");
+  const rows = db.batches.map(b => {
+    const m = db.medicines.find(x => x.id === b.medId);
+    const st = batchState(b);
+    return `
+      <tr>
+        <td><strong>${esc(m ? m.generic_name : b.medId)}</strong><br><small>${esc(b.batchNo)} • Exp ${esc(b.expiry)}</small></td>
+        <td><strong>${b.qty}</strong> <span class="badge ${st === "ACTIVE" ? "ok" : "bad"}">${st}</span></td>
+        <td>
+          <button class="ghost" onclick="toggleQuarantine('${esc(b.id)}')">${b.quarantined ? "Release" : "Quarantine"}</button>
+          <button class="ghost" onclick="adjustStockCount('${esc(b.id)}')">Count</button>
+        </td>
+      </tr>
+    `;
+  }).join("") || `<tr><td colspan="3" style="color:var(--muted);">No stock batches recorded.</td></tr>`;
+
+  el.innerHTML = `
+    <div class="card">
+      <h3>Goods Received Note (GRN — FEFO)</h3>
+      <div class="row">
+        <select id="gMed" style="width:100%;">${opts || '<option value="">Add a medicine under Meds first</option>'}</select>
+      </div>
+      <div class="row">
+        <input id="gWho" type="text" placeholder="Supplier *" style="flex:1;" />
+        <input id="gInv" type="text" placeholder="Invoice No. *" style="width:125px;" />
+      </div>
+      <div class="row">
+        <input id="gBat" type="text" placeholder="Batch No. *" style="width:120px;" />
+        <input id="gExp" type="date" style="flex:1;" />
+        <input id="gQty" type="number" min="1" placeholder="Qty *" style="width:85px;" />
+      </div>
+      <button class="primary" style="width:100%;" onclick="postMobileGrn()">Post GRN Batch</button>
+    </div>
+    <div class="card">
+      <h3>Batch Ledger (${db.batches.length})</h3>
+      <div class="table-wrap"><table><thead><tr><th>Item &amp; Batch</th><th>Qty</th><th>Owner Controls</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </div>
+  `;
+}
+function postMobileGrn() {
+  const medId = document.getElementById("gMed").value;
+  const wholesaler = document.getElementById("gWho").value.trim();
+  const invoiceNo = document.getElementById("gInv").value.trim();
+  const batchNo = document.getElementById("gBat").value.trim();
+  const expiry = document.getElementById("gExp").value;
+  const qty = parseInt(document.getElementById("gQty").value || "0", 10);
+  if (!medId || !wholesaler || !invoiceNo || !batchNo || !expiry || qty <= 0) return alert("Complete all GRN fields.");
+  if (expiry <= todayStr()) return alert("Expired or today-expiring batches cannot be received.");
+  const bCode = getPairing().branchCode || "LOC-MAIN";
+  const batch = { id: `B-${bCode}-${Date.now()}`, branchCode: bCode, medId, wholesaler, invoiceNo, batchNo, expiry, qty, quarantined: false };
+  db.batches.push(batch);
+  emitMobileEvent("BATCH_GRN", { batch });
+  addMobileAudit("GRN_POST", `Received ${qty} units batch ${batchNo}`);
+  saveDb(); render(); toast("GRN batch posted");
+}
+function toggleQuarantine(id) {
+  if (!guardOwner("quarantining or releasing stock batches")) return;
+  const b = db.batches.find(x => x.id === id);
+  if (!b) return;
+  b.quarantined = !b.quarantined;
+  addMobileAudit("BATCH_QUARANTINE", `Batch ${b.batchNo} quarantined=${b.quarantined}`);
+  saveDb(); render();
+}
+function adjustStockCount(id) {
+  if (!guardOwner("adjusting physical stock counts")) return;
+  const b = db.batches.find(x => x.id === id);
+  if (!b) return;
+  const raw = prompt(`Physical count for batch ${b.batchNo} (current ${b.qty}):`, String(b.qty));
+  if (raw === null) return;
+  const newQty = parseInt(raw.trim(), 10);
+  if (!Number.isInteger(newQty) || newQty < 0) return alert("Enter a valid non-negative integer.");
+  const reason = (prompt("Reason for adjustment:") || "").trim();
+  if (!reason) return alert("Reason is required.");
+  const oldQty = b.qty;
+  b.qty = newQty;
+  emitMobileEvent("STOCK_ADJUST", { batchId: b.id, newQty });
+  addMobileAudit("STOCK_ADJUST", `Batch ${b.batchNo}: ${oldQty} -> ${newQty} (${reason})`);
+  saveDb(); render(); toast("Stock adjusted");
+}
+
+function renderMeds(el) {
+  const rows = db.medicines.map(m => `
+    <tr>
+      <td><strong>${esc(m.generic_name)}</strong> ${esc(m.strength)}<br><small>${esc(m.brand_name || "")} ${m.barcode ? "• " + esc(m.barcode) : ""}</small></td>
+      <td>${availQty(m.id)} ${esc(m.base_unit)}</td>
+      <td>${money(m.default_unit_price).toFixed(2)}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="3" style="color:var(--muted);">No formulary items registered.</td></tr>`;
+
+  el.innerHTML = `
+    <div class="card">
+      <h3>Register Formulary Item</h3>
+      <div class="row">
+        <input id="fGen" type="text" placeholder="Generic Name *" style="flex:1;" />
+        <input id="fStr" type="text" placeholder="Strength" style="width:110px;" />
+      </div>
+      <div class="row">
+        <input id="fBrand" type="text" placeholder="Brand" style="flex:1;" />
+        <input id="fUnit" type="text" value="TABLET" style="width:105px;" />
+        <input id="fPrice" type="number" step="0.01" placeholder="Price" style="width:100px;" />
+      </div>
+      <div class="row" style="margin-bottom:0;">
+        <input id="fBar" type="text" placeholder="Barcode (optional)" style="flex:1;" />
+        <button class="dark" onclick="openScanner('BARCODE')">Scan</button>
+        <button class="primary" onclick="saveMobileMed()">Save Item</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Formulary (${db.medicines.length})</h3>
+      <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Stock</th><th>Price</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </div>
+  `;
+}
+function saveMobileMed() {
+  const generic_name = document.getElementById("fGen").value.trim();
+  if (!generic_name) return alert("Generic name is required.");
+  const bCode = getPairing().branchCode || "LOC-MAIN";
+  const med = {
+    id: `M-${bCode}-${Date.now()}`,
+    generic_name,
+    brand_name: document.getElementById("fBrand").value.trim(),
+    strength: document.getElementById("fStr").value.trim(),
+    base_unit: (document.getElementById("fUnit").value || "TABLET").trim().toUpperCase(),
+    default_unit_price: money(parseFloat(document.getElementById("fPrice").value || "0")),
+    barcode: document.getElementById("fBar").value.trim(),
+    reorder_level: 10,
+    nda_schedule: "CLASS_C"
+  };
+  db.medicines.push(med);
+  emitMobileEvent("MED_UPSERT", { med });
+  addMobileAudit("FORMULARY_ADD", `Added ${generic_name}`);
+  saveDb(); render(); toast("Medicine saved");
+}
+
+function renderReports(el) {
+  const crRows = db.credits.filter(c => !c.settled).map(c => `
+    <tr>
+      <td><strong>${esc(c.customer)}</strong><br><small>${esc(c.receiptId)}</small></td>
+      <td>${money(c.balance).toFixed(2)}</td>
+      <td><button class="primary" onclick="settleMobileCredit('${esc(c.id)}')">Settle</button></td>
+    </tr>
+  `).join("") || `<tr><td colspan="3" style="color:var(--muted);">No open credit accounts.</td></tr>`;
+
+  const auditHtml = isOwner()
+    ? `<div class="card"><h3>Audit Trail (${db.audit.length})</h3><div class="table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Detail</th></tr></thead><tbody>${
+        db.audit.slice(0, 30).map(a => `<tr><td>${esc(a.time.slice(0, 16).replace("T", " "))}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted);">No audit entries.</td></tr>`
+      }</tbody></table></div></div>`
+    : `<div class="alert alert-warn">Switch to <b>Owner</b> clearance to view full audit logs.</div>`;
+
+  el.innerHTML = `
+    <div class="card">
+      <h3>Open Credit Accounts (${money(openCreditTotal()).toFixed(2)})</h3>
+      <div class="table-wrap"><table><thead><tr><th>Customer</th><th>Balance</th><th>Action</th></tr></thead><tbody>${crRows}</tbody></table></div>
+    </div>
+    ${auditHtml}
+  `;
+}
+function settleMobileCredit(id) {
+  const c = db.credits.find(x => x.id === id);
+  if (!c) return;
+  const amt = money(parseFloat(prompt(`Open balance: ${money(c.balance).toFixed(2)}. Settlement amount:`) || "0"));
+  if (!(amt > 0 && amt <= money(c.balance))) return alert("Invalid settlement amount.");
+  c.balance = money(c.balance - amt);
+  if (c.balance <= 0) c.settled = true;
+  emitMobileEvent("CREDIT_UPSERT", { credit: c });
+  addMobileAudit("CREDIT_SETTLE", `Settled ${amt.toFixed(2)} on ${c.receiptId}`);
+  saveDb(); render(); toast("Credit settled");
+}
+
+function renderAdmin(el) {
+  if (!guardOwner("viewing Owner Administration")) {
+    activeTab = "sell";
+    return renderSell(el);
+  }
+  const pair = getPairing();
+  el.innerHTML = `
+    <div class="card">
+      <h3>Owner Clearance &amp; Security</h3>
+      <div class="row" style="margin-bottom:0;">
+        <button class="primary" onclick="verifyOwnerWithBiometricOrPin()">Verify Biometric / PIN</button>
+        <button class="ghost" onclick="changeMobileOwnerPin()">Change Owner PIN</button>
+        <button class="ghost" onclick="exportMobileJson()">Export Branch JSON</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Windows Gateway &amp; Branch Control</h3>
+      <div style="font-size:12.5px;margin-bottom:10px;">
+        Branch: <b>${esc(pair.branchCode)}</b> • Endpoint: <b>${esc(pair.endpoint || "Not paired")}</b> • Outbox: <b>${db.outbox.length}</b>
+      </div>
+      <div class="row">
+        <button class="accent" onclick="openScanner('PAIR')">Scan Windows QR</button>
+        <button class="dark" onclick="autoDiscoverWindowsGateway()">Auto-Find Gateway</button>
+        <button class="primary" onclick="syncWithGateway()">Flush &amp; Sync</button>
+      </div>
+      <div class="row" style="margin-bottom:0;">
+        <button class="ghost" onclick="remoteRotateWindowsKeys()">Rotate Windows Keys</button>
+        <button class="ghost" onclick="remoteSetWindowsBranch()">Set Windows Branch</button>
+        <button class="danger" onclick="unpairStation()">Unpair</button>
+      </div>
+    </div>
+  `;
+}
+
+async function remoteRotateWindowsKeys() {
+  const pair = getPairing();
+  if (!pair.paired || !pair.endpoint || !pair.token) return alert("Pair with Windows first.");
+  try {
+    const r = await fetch(`${pair.endpoint}/api/admin/rotate-keys`, {
+      method: "POST",
+      headers: { "X-Pair-Token": pair.token }
+    });
+    if (!r.ok) return alert("Windows rejected key rotation (Owner token required).");
+    const info = await r.json();
+    pair.token = info.ownerToken || pair.token;
+    savePairing(pair);
+    addMobileAudit("REMOTE_KEY_ROTATION", `Rotated keys on ${pair.branchCode}`);
+    saveDb(); renderTop(); render();
+    toast("Windows keys rotated — rescan QR for new tokens");
+  } catch (err) {
+    alert("Failed to rotate keys: " + (err?.message || err));
+  }
+}
+
+async function remoteSetWindowsBranch() {
+  const pair = getPairing();
+  if (!pair.paired || !pair.endpoint || !pair.token) return alert("Pair with Windows first.");
+  const branchName = (prompt("New Location Name (e.g., SSEDDUME - MENGO):", pair.branchCode) || "").trim();
+  if (!branchName) return;
+  const branchCode = (prompt("New Location Code (e.g., LOC-MENGO):", pair.branchCode) || "").trim().toUpperCase();
+  if (!branchCode) return;
+  try {
+    const r = await fetch(`${pair.endpoint}/api/admin/branch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Pair-Token": pair.token },
+      body: JSON.stringify({ branchCode, branchName })
+    });
+    if (!r.ok) return alert("Windows rejected branch update.");
+    const info = await r.json();
+    pair.branchCode = info.branchCode || branchCode;
+    savePairing(pair);
+    db = loadDb();
+    addMobileAudit("REMOTE_BRANCH_SET", `Updated branch to ${branchName} (${pair.branchCode})`);
+    saveDb(); renderTop(); render();
+    toast(`Branch set to ${pair.branchCode}`);
+  } catch (err) {
+    alert("Failed to update branch: " + (err?.message || err));
+  }
+}
+
+function exportMobileJson() {
+  const pair = getPairing();
+  const pkg = { system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM", branchCode: pair.branchCode, exportedAt: nowIso(), data: db };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(pkg, null, 2)], { type: "application/json" }));
+  a.download = `sseddume-mobile-${(pair.branchCode || "loc-main").toLowerCase()}-${todayStr()}.json`;
+  a.click();
+  toast("Exported branch JSON");
+}
+
 function changeMobileOwnerPin() {
   verifyOwnerWithBiometricOrPin(() => {
     const sess = getSession();
@@ -637,9 +1136,11 @@ function changeMobileOwnerPin() {
     }
   });
 }
+
 function unpairStation() {
   if (!confirm("Unpair this Android device from the Windows station?")) return;
   savePairing({ paired: false, role: "OWNER", branchCode: "LOC-MAIN", host: "", endpoint: "", token: "" });
+  db = loadDb();
   renderTop(); render(); toast("Station unpaired");
 }
 
